@@ -3,17 +3,20 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, Link, Unlink, ChevronDown, ChevronUp, Globe } from 'lucide-react';
 import { shopsApi, authApi } from '../services/api';
 
-function buildProxyUrl(host: string, port: string) {
+type ProxyType = 'http' | 'https' | 'socks5' | 'socks4';
+
+function buildProxyUrl(type: ProxyType, host: string, port: string) {
   if (!host || !port) return '';
-  return `http://${host}:${port}`;
+  return `${type}://${host}:${port}`;
 }
 
-function parseProxyUrl(url: string): { host: string; port: string } {
+function parseProxyUrl(url: string): { type: ProxyType; host: string; port: string } {
   try {
     const u = new URL(url);
-    return { host: u.hostname, port: u.port };
+    const type = (u.protocol.replace(':', '') as ProxyType) || 'http';
+    return { type, host: u.hostname, port: u.port };
   } catch {
-    return { host: '', port: '' };
+    return { type: 'http', host: '', port: '' };
   }
 }
 
@@ -85,12 +88,12 @@ export default function Shops() {
 function AddShopForm({ onSubmit, onCancel, loading }: { onSubmit: (d: any) => void; onCancel: () => void; loading: boolean }) {
   const [name, setName] = useState('');
   const [showProxy, setShowProxy] = useState(false);
-  const [proxy, setProxy] = useState({ host: '', port: '', username: '', password: '' });
+  const [proxy, setProxy] = useState<{ type: ProxyType; host: string; port: string; username: string; password: string }>({ type: 'socks5', host: '', port: '', username: '', password: '' });
 
   const handleSubmit = () => {
     onSubmit({
       name,
-      proxy_url: buildProxyUrl(proxy.host, proxy.port),
+      proxy_url: buildProxyUrl(proxy.type, proxy.host, proxy.port),
       proxy_username: proxy.username || undefined,
       proxy_password: proxy.password || undefined,
     });
@@ -110,6 +113,15 @@ function AddShopForm({ onSubmit, onCancel, loading }: { onSubmit: (d: any) => vo
         </button>
         {showProxy && (
           <div className="space-y-2 border border-etsy-border rounded-lg p-3 bg-gray-50">
+            <div>
+              <label className="label text-xs">סוג פרוקסי</label>
+              <select className="input text-sm" value={proxy.type} onChange={e => setProxy({ ...proxy, type: e.target.value as ProxyType })}>
+                <option value="socks5">SOCKS5 (AdsPower)</option>
+                <option value="socks4">SOCKS4</option>
+                <option value="http">HTTP</option>
+                <option value="https">HTTPS</option>
+              </select>
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="label text-xs">כתובת IP</label>
@@ -118,7 +130,7 @@ function AddShopForm({ onSubmit, onCancel, loading }: { onSubmit: (d: any) => vo
               </div>
               <div>
                 <label className="label text-xs">פורט</label>
-                <input className="input text-sm font-mono" placeholder="8080" value={proxy.port}
+                <input className="input text-sm font-mono" placeholder="1080" value={proxy.port}
                   onChange={e => setProxy({ ...proxy, port: e.target.value })} />
               </div>
             </div>
@@ -152,7 +164,8 @@ function ShopItem({ shop, expanded, onToggle, onConnect, onDisconnect, onDelete 
   const qc = useQueryClient();
 
   const existing = parseProxyUrl(shop.proxy_url || '');
-  const [proxy, setProxy] = useState({
+  const [proxy, setProxy] = useState<{ type: ProxyType; host: string; port: string; username: string; password: string }>({
+    type: existing.type,
     host: existing.host,
     port: existing.port,
     username: shop.proxy_username || '',
@@ -166,7 +179,7 @@ function ShopItem({ shop, expanded, onToggle, onConnect, onDisconnect, onDelete 
 
   const handleSaveProxy = () => {
     updateMutation.mutate({
-      proxy_url: buildProxyUrl(proxy.host, proxy.port),
+      proxy_url: buildProxyUrl(proxy.type, proxy.host, proxy.port),
       proxy_username: proxy.username || undefined,
       proxy_password: proxy.password || undefined,
     });
@@ -198,6 +211,12 @@ function ShopItem({ shop, expanded, onToggle, onConnect, onDisconnect, onDelete 
           {/* Proxy Settings */}
           <div className="space-y-2">
             <label className="label flex items-center gap-1"><Globe size={14} /> הגדרות פרוקסי</label>
+            <select className="input text-sm" value={proxy.type} onChange={e => setProxy({ ...proxy, type: e.target.value as ProxyType })}>
+              <option value="socks5">SOCKS5 (AdsPower)</option>
+              <option value="socks4">SOCKS4</option>
+              <option value="http">HTTP</option>
+              <option value="https">HTTPS</option>
+            </select>
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="label text-xs">כתובת IP</label>
@@ -206,7 +225,7 @@ function ShopItem({ shop, expanded, onToggle, onConnect, onDisconnect, onDelete 
               </div>
               <div>
                 <label className="label text-xs">פורט</label>
-                <input className="input text-sm font-mono" placeholder="8080"
+                <input className="input text-sm font-mono" placeholder="1080"
                   value={proxy.port} onChange={e => setProxy({ ...proxy, port: e.target.value })} />
               </div>
             </div>

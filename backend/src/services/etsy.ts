@@ -32,6 +32,12 @@ export function buildProxyAgent(shop: Shop) {
     u.password = encodeURIComponent(shop.proxy_password);
     url = u.toString();
   }
+  const protocol = new URL(url).protocol;
+  if (protocol === 'socks5:' || protocol === 'socks4:' || protocol === 'socks:') {
+    // Dynamic import for ESM-only socks-proxy-agent
+    const { SocksProxyAgent } = require('socks-proxy-agent');
+    return new SocksProxyAgent(url);
+  }
   return new HttpsProxyAgent(url);
 }
 
