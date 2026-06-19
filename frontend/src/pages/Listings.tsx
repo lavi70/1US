@@ -3,9 +3,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   Package, RefreshCw, Trash2, Edit3, Send, ExternalLink,
-  Filter, Search, ChevronDown, Plus, Eye, EyeOff, CheckSquare, Square
+  Search, ChevronDown, Plus, CheckSquare, Square, Copy, BarChart2
 } from 'lucide-react';
 import { listingsApi, shopsApi } from '../services/api';
+import { calcSEOScore } from '../components/SEOScore';
+import api from '../services/api';
 
 type StatusFilter = 'all' | 'draft' | 'active' | 'inactive';
 
@@ -144,6 +146,7 @@ export default function Listings() {
                 <ListingCard
                   key={listing.id}
                   listing={listing}
+                  shopId={selectedShop}
                   selected={selected.has(listing.id)}
                   onSelect={() => toggleSelect(listing.id)}
                   onDelete={() => { if (confirm('למחוק?')) deleteMutation.mutate(listing.id); }}
@@ -166,8 +169,33 @@ export default function Listings() {
   );
 }
 
-function ListingCard({ listing, selected, onSelect, onDelete, onPublish, publishing }: any) {
+function ListingCard({ listing, selected, onSelect, onDelete, onPublish, publishing, shopId }: any) {
   const [expanded, setExpanded] = useState(false);
+  const qc = useQueryClient();
+
+  const { score } = calcSEOScore({
+    title: listing.title || '',
+    description: listing.description || '',
+    tags: listing.tags || [],
+    price: listing.price || 0,
+    images: listing.images?.length || 0,
+  });
+
+  const scoreColor = score >= 80 ? 'text-green-600' : score >= 50 ? 'text-orange-500' : 'text-red-400';
+
+  const duplicateMutation = useMutation({
+    mutationFn: () => api.post(`/listings/shop/${shopId}`, {
+      title: listing.title + ' (עותק)',
+      description: listing.description,
+      price: listing.price,
+      quantity: listing.quantity,
+      tags: listing.tags,
+      who_made: listing.who_made,
+      when_made: listing.when_made,
+      is_supply: listing.is_supply === 1,
+    }).then(r => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['listings'] }),
+  });
 
   const statusColor = {
     active: 'badge-green',
@@ -199,7 +227,9 @@ function ListingCard({ listing, selected, onSelect, onDelete, onPublish, publish
           <div className="flex items-center gap-2 mt-0.5">
             <span className="text-etsy-orange font-semibold text-sm">${listing.price?.toFixed(2)}</span>
             <span className={statusColor}>{statusLabel}</span>
-            {listing.etsy_listing_id && <span className="text-xs text-etsy-gray">#{listing.etsy_listing_id}</span>}
+            <span className={`text-xs font-medium flex items-center gap-0.5 ${scoreColor}`}>
+              <BarChart2 size={10} />{score}
+            </span>
           </div>
         </div>
 
@@ -220,7 +250,7 @@ function ListingCard({ listing, selected, onSelect, onDelete, onPublish, publish
               ))}
             </div>
           )}
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Link to={`/listing/${listing.id}/edit`} className="flex-1 btn-secondary text-sm flex items-center justify-center gap-1">
               <Edit3 size={13} /> ערוך
             </Link>
@@ -230,6 +260,11 @@ function ListingCard({ listing, selected, onSelect, onDelete, onPublish, publish
                 <Send size={13} /> {publishing ? 'מפרסם...' : 'פרסם'}
               </button>
             )}
+            <button onClick={() => duplicateMutation.mutate()} disabled={duplicateMutation.isPending}
+              title="שכפל מוצר"
+              className="p-2.5 rounded-lg border border-etsy-border text-etsy-gray">
+              <Copy size={14} />
+            </button>
             {listing.etsy_listing_id && (
               <a href={`https://www.etsy.com/listing/${listing.etsy_listing_id}`} target="_blank" rel="noopener noreferrer"
                 className="p-2.5 rounded-lg border border-etsy-border text-etsy-gray">

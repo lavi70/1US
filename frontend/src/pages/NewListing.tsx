@@ -5,6 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Image, X, Send, Tag, DollarSign, ArrowRight, Package } from 'lucide-react';
 import { shopsApi, listingsApi } from '../services/api';
 import api from '../services/api';
+import SEOScore from '../components/SEOScore';
 
 const WHO_MADE = [
   { value: 'i_did', label: 'אני הכנתי' },
@@ -315,13 +316,14 @@ export default function NewListing() {
             )}
           </div>
 
-          {/* Summary */}
-          <div className="card p-3 space-y-1 text-sm">
-            <p><span className="text-etsy-gray">כותרת:</span> {form.title || '–'}</p>
-            <p><span className="text-etsy-gray">מחיר:</span> ${form.price || '0'}</p>
-            <p><span className="text-etsy-gray">תמונות:</span> {images.length}</p>
-            <p><span className="text-etsy-gray">תגיות:</span> {form.tags.length}/13</p>
-          </div>
+          {/* SEO Score */}
+          <SEOScore
+            title={form.title}
+            description={form.description}
+            tags={form.tags}
+            price={parseFloat(form.price) || 0}
+            images={images.length + existingImages.length}
+          />
 
           <div className="flex gap-2">
             <button onClick={() => setStep(3)} className="btn-secondary flex-1">חזור</button>
