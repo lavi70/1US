@@ -1,10 +1,14 @@
 import axios, { AxiosInstance } from 'axios';
 import { HttpsProxyAgent } from 'https-proxy-agent';
+import { randomBytes } from 'crypto';
 import db from '../db/database.js';
 
 const ETSY_BASE = 'https://openapi.etsy.com/v3';
 const ETSY_AUTH = 'https://www.etsy.com/oauth/connect';
 const ETSY_TOKEN = 'https://api.etsy.com/v3/public/oauth/token';
+
+// Temporary store for PKCE verifiers during OAuth flow (shopId -> verifier)
+const pkceVerifiers = new Map<string, string>();
 
 export interface Shop {
   id: string;
@@ -85,13 +89,17 @@ export async function refreshTokenIfNeeded(shop: Shop): Promise<Shop> {
 }
 
 export function buildAuthUrl(shopId: string, state: string): string {
+  // Generate proper PKCE code_verifier: 64 random bytes as base64url = 86 chars
+  const verifier = randomBytes(64).toString('base64url');
+  pkceVerifiers.set(shopId, verifier);
+
   const params = new URLSearchParams({
     response_type: 'code',
     redirect_uri: process.env.ETSY_REDIRECT_URI || 'http://localhost:3001/api/auth/callback',
     scope: 'listings_r listings_w listings_d shops_r shops_w transactions_r profile_r',
     client_id: process.env.ETSY_API_KEY || '',
     state: `${shopId}:${state}`,
-    code_challenge: 'challenge',
+    code_challenge: verifier,
     code_challenge_method: 'plain',
   });
   return `${ETSY_AUTH}?${params.toString()}`;
@@ -101,12 +109,15 @@ export async function exchangeCode(code: string, shopId: string): Promise<void> 
   const shop = db.prepare('SELECT * FROM shops WHERE id = ?').get(shopId) as Shop;
   const agent = buildProxyAgent(shop);
 
+  const verifier = pkceVerifiers.get(shopId) || '';
+  pkceVerifiers.delete(shopId);
+
   const res = await axios.post(ETSY_TOKEN, new URLSearchParams({
     grant_type: 'authorization_code',
     client_id: process.env.ETSY_API_KEY || '',
     redirect_uri: process.env.ETSY_REDIRECT_URI || 'http://localhost:3001/api/auth/callback',
     code,
-    code_verifier: 'challenge',
+    code_verifier: verifier,
   }), { httpsAgent: agent, httpAgent: agent });
 
   const { access_token, refresh_token, expires_in } = res.data;
@@ -117,23 +128,26 @@ export async function exchangeCode(code: string, shopId: string): Promise<void> 
     WHERE id = ?
   `).run(access_token, refresh_token, expires_at, shopId);
 
-  // Fetch and store Etsy shop info
-  await fetchAndStoreShopInfo(shopId);
+  // Fetch shop info - non-blocking, don't fail auth if this errors
+  fetchAndStoreShopInfo(shopId).catch(err => console.error('fetchAndStoreShopInfo:', err.message));
 }
 
 async function fetchAndStoreShopInfo(shopId: string): Promise<void> {
   const shop = db.prepare('SELECT * FROM shops WHERE id = ?').get(shopId) as Shop;
   const client = getClient(shop);
+
   await rateLimit(shopId);
-  const me = await client.get('/application/openapi-ping');
-  // After successful auth, get user's shop
   const userRes = await client.get('/application/users/me');
   const userId = userRes.data.user_id;
+  if (!userId) return;
+
   await rateLimit(shopId);
-  const shopsRes = await client.get(`/application/users/${userId}/shops`);
-  if (shopsRes.data?.shop_id) {
-    db.prepare('UPDATE shops SET etsy_shop_id = ?, etsy_user_id = ? WHERE id = ?')
-      .run(String(shopsRes.data.shop_id), String(userId), shopId);
+  const shopRes = await client.get(`/application/users/${userId}/shops`);
+  const etsyShopId = shopRes.data?.shop_id ?? shopRes.data?.results?.[0]?.shop_id;
+
+  if (etsyShopId) {
+    db.prepare('UPDATE shops SET etsy_shop_id = ?, etsy_user_id = ?, updated_at = unixepoch() WHERE id = ?')
+      .run(String(etsyShopId), String(userId), shopId);
   }
 }
 
