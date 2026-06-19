@@ -7,7 +7,7 @@ const ENV_PATH = path.join(process.cwd(), '.env');
 
 router.post('/', (req, res) => {
   try {
-    const { etsy_api_key, etsy_redirect_uri } = req.body;
+    const { etsy_api_key, etsy_redirect_uri, anthropic_api_key } = req.body;
     let content = '';
 
     if (fs.existsSync(ENV_PATH)) {
@@ -31,6 +31,10 @@ router.post('/', (req, res) => {
     if (etsy_redirect_uri) {
       update('ETSY_REDIRECT_URI', etsy_redirect_uri);
       process.env.ETSY_REDIRECT_URI = etsy_redirect_uri;
+    }
+    if (anthropic_api_key) {
+      update('ANTHROPIC_API_KEY', anthropic_api_key);
+      process.env.ANTHROPIC_API_KEY = anthropic_api_key;
     }
 
     fs.writeFileSync(ENV_PATH, content.trim() + '\n');

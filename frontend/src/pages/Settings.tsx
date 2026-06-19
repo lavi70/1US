@@ -1,20 +1,21 @@
 import { useState } from 'react';
-import { Key, Info, ExternalLink, Shield } from 'lucide-react';
+import { Key, Info, ExternalLink, Shield, Sparkles } from 'lucide-react';
 
 export default function SettingsPage() {
   const [apiKey, setApiKey] = useState(localStorage.getItem('etsy_api_key') || '');
   const [redirectUri, setRedirectUri] = useState(localStorage.getItem('etsy_redirect_uri') || 'http://localhost:3001/api/auth/callback');
+  const [anthropicKey, setAnthropicKey] = useState(localStorage.getItem('anthropic_api_key') || '');
   const [saved, setSaved] = useState(false);
 
   const save = async () => {
-    // In production, these would be sent to backend to update .env
     localStorage.setItem('etsy_api_key', apiKey);
     localStorage.setItem('etsy_redirect_uri', redirectUri);
+    localStorage.setItem('anthropic_api_key', anthropicKey);
 
     await fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ etsy_api_key: apiKey, etsy_redirect_uri: redirectUri }),
+      body: JSON.stringify({ etsy_api_key: apiKey, etsy_redirect_uri: redirectUri, anthropic_api_key: anthropicKey }),
     }).catch(() => {});
 
     setSaved(true);
@@ -43,6 +44,24 @@ export default function SettingsPage() {
           </div>
           <button onClick={save} className="btn-primary w-full">
             {saved ? '✓ נשמר!' : 'שמור הגדרות'}
+          </button>
+        </div>
+      </div>
+
+      {/* Anthropic AI */}
+      <div className="card p-4 mb-4">
+        <h2 className="font-semibold flex items-center gap-2 mb-3">
+          <Sparkles size={16} className="text-purple-500" /> Anthropic AI (Claude)
+        </h2>
+        <div className="space-y-3">
+          <div>
+            <label className="label">API Key</label>
+            <input className="input font-mono text-sm" type="password" value={anthropicKey}
+              onChange={e => setAnthropicKey(e.target.value)} placeholder="sk-ant-..." />
+            <p className="text-xs text-etsy-gray mt-1">נדרש עבור AI Generator ליצירת כותרות ותגיות</p>
+          </div>
+          <button onClick={save} className="btn-primary w-full">
+            {saved ? '✓ נשמר!' : 'שמור'}
           </button>
         </div>
       </div>

@@ -13,6 +13,7 @@ import settingsRouter from './routes/settings.js';
 import ordersRouter from './routes/orders.js';
 import analyticsRouter from './routes/analytics.js';
 import templatesRouter from './routes/templates.js';
+import aiRouter from './routes/ai.js';
 import './db/database.js'; // Initialize DB
 
 const app = express();
@@ -45,6 +46,7 @@ app.use('/api/settings', settingsRouter);
 app.use('/api/orders', ordersRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/templates', templatesRouter);
+app.use('/api/ai', aiRouter);
 app.use('/uploads', express.static(uploadsDir));
 
 app.get('/api/health', (_, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));

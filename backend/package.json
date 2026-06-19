@@ -9,6 +9,7 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.105.0",
     "@types/form-data": "^2.2.1",
     "axios": "^1.7.2",
     "better-sqlite3": "^9.6.0",

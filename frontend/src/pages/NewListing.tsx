@@ -262,33 +262,13 @@ export default function NewListing() {
 
       {/* Step 3: Tags */}
       {step === 3 && (
-        <div className="space-y-4">
-          <div>
-            <label className="label flex items-center gap-1"><Tag size={14} />תגיות ({form.tags.length}/13)</label>
-            <div className="flex gap-2">
-              <input className="input flex-1" placeholder="הוסף תגית..." value={tagInput}
-                onChange={e => setTagInput(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
-                maxLength={20} />
-              <button onClick={addTag} className="btn-secondary px-3">+</button>
-            </div>
-            <p className="text-xs text-etsy-gray mt-1">עד 13 תגיות, עד 20 תווים כל אחת</p>
-          </div>
-          {form.tags.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {form.tags.map(tag => (
-                <span key={tag} className="flex items-center gap-1 bg-orange-50 text-etsy-orange text-sm px-2 py-1 rounded-full border border-orange-200">
-                  {tag}
-                  <button onClick={() => removeTag(tag)}><X size={12} /></button>
-                </span>
-              ))}
-            </div>
-          )}
-          <div className="flex gap-2">
-            <button onClick={() => setStep(2)} className="btn-secondary flex-1">חזור</button>
-            <button onClick={() => setStep(4)} className="btn-primary flex-1">הבא</button>
-          </div>
-        </div>
+        <TagStep
+          tags={form.tags}
+          setTags={tags => setForm(f => ({ ...f, tags }))}
+          titleKeyword={form.title.split(' ').slice(0, 3).join(' ')}
+          onBack={() => setStep(2)}
+          onNext={() => setStep(4)}
+        />
       )}
 
       {/* Step 4: Publish */}
@@ -346,6 +326,88 @@ export default function NewListing() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function TagStep({ tags, setTags, titleKeyword, onBack, onNext }: {
+  tags: string[]; setTags: (t: string[]) => void;
+  titleKeyword: string; onBack: () => void; onNext: () => void;
+}) {
+  const [tagInput, setTagInput] = useState('');
+  const [suggestions, setSuggestions] = useState<{ tag: string; count: number }[]>([]);
+  const [loadingSugg, setLoadingSugg] = useState(false);
+
+  const addTag = (tag: string) => {
+    const t = tag.trim().toLowerCase().slice(0, 20);
+    if (t && tags.length < 13 && !tags.includes(t)) setTags([...tags, t]);
+  };
+
+  const removeTag = (t: string) => setTags(tags.filter(x => x !== t));
+
+  const loadSuggestions = async () => {
+    if (!titleKeyword) return;
+    setLoadingSugg(true);
+    try {
+      const res = await api.post('/ai/suggest-tags', { keyword: titleKeyword, existing_tags: tags });
+      setSuggestions(res.data.suggestions || []);
+    } catch {}
+    setLoadingSugg(false);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className="label flex items-center gap-1"><Tag size={14} />תגיות ({tags.length}/13)</label>
+        <div className="flex gap-2">
+          <input className="input flex-1" placeholder="הוסף תגית..." value={tagInput}
+            onChange={e => setTagInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag(tagInput); setTagInput(''); } }}
+            maxLength={20} />
+          <button onClick={() => { addTag(tagInput); setTagInput(''); }} className="btn-secondary px-3">+</button>
+        </div>
+        <p className="text-xs text-etsy-gray mt-1">עד 13 תגיות, עד 20 תווים כל אחת</p>
+      </div>
+
+      {tags.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {tags.map(tag => (
+            <span key={tag} className="flex items-center gap-1 bg-orange-50 text-etsy-orange text-sm px-2 py-1 rounded-full border border-orange-200">
+              {tag}
+              <button onClick={() => removeTag(tag)}><X size={12} /></button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Smart suggestions */}
+      <div className="card p-3 bg-blue-50 border-blue-100">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-semibold text-blue-700">💡 הצעות חכמות מהשוק</p>
+          <button onClick={loadSuggestions} disabled={loadingSugg || tags.length >= 13}
+            className="text-xs text-blue-600 border border-blue-200 rounded px-2 py-1">
+            {loadingSugg ? '...' : 'טען'}
+          </button>
+        </div>
+        {suggestions.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {suggestions.filter(s => !tags.includes(s.tag)).slice(0, 15).map(s => (
+              <button key={s.tag} onClick={() => addTag(s.tag)} disabled={tags.length >= 13}
+                className="text-xs bg-white text-blue-600 border border-blue-200 px-2 py-0.5 rounded-full hover:bg-blue-50 disabled:opacity-40">
+                + {s.tag}
+              </button>
+            ))}
+          </div>
+        )}
+        {suggestions.length === 0 && !loadingSugg && (
+          <p className="text-xs text-blue-500">לחץ "טען" לקבלת הצעות על בסיס מחקר שוק</p>
+        )}
+      </div>
+
+      <div className="flex gap-2">
+        <button onClick={onBack} className="btn-secondary flex-1">חזור</button>
+        <button onClick={onNext} className="btn-primary flex-1">הבא</button>
+      </div>
     </div>
   );
 }
