@@ -16,6 +16,7 @@ import QuickEdit from './pages/QuickEdit';
 import ProfitCalc from './pages/ProfitCalc';
 import SEOAudit from './pages/SEOAudit';
 import Inventory from './pages/Inventory';
+import OAuthCallback from './pages/OAuthCallback';
 
 function MoreMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (!open) return null;
@@ -90,6 +91,7 @@ export default function App() {
     <BrowserRouter>
       <div className="min-h-screen pb-20 max-w-lg mx-auto">
         <Routes>
+          <Route path="/oauth-callback"     element={<OAuthCallback />} />
           <Route path="/"                  element={<Dashboard />} />
           <Route path="/shops"             element={<Shops />} />
           <Route path="/listings"          element={<Listings />} />

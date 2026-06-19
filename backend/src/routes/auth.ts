@@ -29,10 +29,11 @@ router.get('/callback', async (req, res) => {
 
   try {
     await exchangeCode(code, shopId);
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/shops?connected=${shopId}`);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/oauth-callback?connected=${shopId}`);
   } catch (err: any) {
-    console.error('OAuth callback error:', err.message);
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/shops?error=auth_failed`);
+    console.error('OAuth callback error:', err.message, err.response?.data);
+    const msg = encodeURIComponent(err.response?.data?.error_description || err.message || 'auth_failed');
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/oauth-callback?error=${msg}`);
   }
 });
 

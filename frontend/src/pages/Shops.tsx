@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, Link, Unlink, ChevronDown, ChevronUp, Globe } from 'lucide-react';
 import { shopsApi, authApi } from '../services/api';
+import { useToast } from '../components/Toast';
 
 type ProxyType = 'http' | 'https' | 'socks5' | 'socks4';
 
@@ -22,10 +23,26 @@ function parseProxyUrl(url: string): { type: ProxyType; host: string; port: stri
 
 export default function Shops() {
   const qc = useQueryClient();
+  const toast = useToast();
   const [showAdd, setShowAdd] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const { data: shops = [], isLoading } = useQuery({ queryKey: ['shops'], queryFn: shopsApi.list });
+
+  // Listen for OAuth popup result
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type !== 'etsy_oauth') return;
+      if (e.data.connected) {
+        qc.invalidateQueries({ queryKey: ['shops'] });
+        toast.success('החנות חוברה בהצלחה לEtsy!');
+      } else if (e.data.error) {
+        toast.error(`שגיאה בחיבור: ${decodeURIComponent(e.data.error)}`);
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [qc, toast]);
 
   const createMutation = useMutation({
     mutationFn: shopsApi.create,
@@ -40,7 +57,8 @@ export default function Shops() {
   const connectMutation = useMutation({
     mutationFn: async (shopId: string) => {
       const { url } = await authApi.getUrl(shopId);
-      window.open(url, '_blank', 'width=600,height=700');
+      const popup = window.open(url, 'etsy_oauth', 'width=600,height=700,left=200,top=100');
+      if (!popup) toast.error('חסום פופאפ — אפשר פופאפים בדפדפן ונסה שוב');
     },
   });
 
