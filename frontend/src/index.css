@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+    box-sizing: border-box;
+  }
+  body {
+    @apply bg-etsy-light text-etsy-dark font-sans;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: contain;
+  }
+  input, textarea, select {
+    @apply text-base; /* Prevents iOS zoom on focus */
+    font-size: 16px !important;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-etsy-orange text-white px-4 py-2.5 rounded-lg font-semibold
+           active:scale-95 transition-transform touch-manipulation
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-secondary {
+    @apply bg-white text-etsy-dark border border-etsy-border px-4 py-2.5 rounded-lg font-semibold
+           active:scale-95 transition-transform touch-manipulation;
+  }
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-etsy-border;
+  }
+  .input {
+    @apply w-full border border-etsy-border rounded-lg px-3 py-2.5 focus:outline-none
+           focus:ring-2 focus:ring-etsy-orange/30 focus:border-etsy-orange bg-white;
+  }
+  .label {
+    @apply block text-sm font-medium text-etsy-dark mb-1;
+  }
+  .badge-green {
+    @apply bg-green-100 text-green-700 text-xs font-medium px-2 py-0.5 rounded-full;
+  }
+  .badge-orange {
+    @apply bg-orange-100 text-orange-700 text-xs font-medium px-2 py-0.5 rounded-full;
+  }
+  .badge-gray {
+    @apply bg-gray-100 text-gray-600 text-xs font-medium px-2 py-0.5 rounded-full;
+  }
+}
+
+/* iOS safe area */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.safe-top { padding-top: env(safe-area-inset-top); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { @apply bg-etsy-border rounded-full; }
