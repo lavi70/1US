@@ -63,4 +63,9 @@ export const researchApi = {
   history: (shopId: string) => api.get(`/research/history/${shopId}`).then(r => r.data),
 };
 
+// Orders
+export const ordersApi = {
+  list: (shopId: string) => api.get(`/orders/shop/${shopId}`).then(r => r.data),
+};
+
 export default api;

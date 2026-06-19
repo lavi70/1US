@@ -62,4 +62,8 @@ db.exec(`
   );
 `);
 
+// Migrations - safe to run on existing DB
+try { db.exec(`ALTER TABLE listings ADD COLUMN category_name TEXT`); } catch {}
+try { db.exec(`ALTER TABLE shops ADD COLUMN last_sync INTEGER`); } catch {}
+
 export default db;

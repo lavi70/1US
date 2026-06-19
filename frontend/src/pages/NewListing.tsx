@@ -1,9 +1,10 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useDropzone } from 'react-dropzone';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Image, X, Upload, Send, Tag, DollarSign, Package } from 'lucide-react';
+import { Image, X, Send, Tag, DollarSign, ArrowRight, Package } from 'lucide-react';
 import { shopsApi, listingsApi } from '../services/api';
+import api from '../services/api';
 
 const WHO_MADE = [
   { value: 'i_did', label: 'אני הכנתי' },
@@ -25,9 +26,13 @@ const WHEN_MADE = [
 export default function NewListing() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { id: editId } = useParams<{ id: string }>();
+  const isEdit = !!editId;
+
   const [step, setStep] = useState(1);
   const [images, setImages] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [existingImages, setExistingImages] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [form, setForm] = useState({
     shop_id: '',
@@ -44,6 +49,34 @@ export default function NewListing() {
 
   const { data: shops = [] } = useQuery({ queryKey: ['shops'], queryFn: shopsApi.list });
   const connectedShops = shops.filter((s: any) => s.status === 'connected');
+
+  // Load existing listing for edit mode
+  useEffect(() => {
+    if (!editId) return;
+    api.get(`/listings/shop/all`).catch(() => null);
+    // Find listing across all shops
+    Promise.all(shops.map((s: any) =>
+      api.get(`/listings/shop/${s.id}`).then(r => r.data).catch(() => [])
+    )).then(results => {
+      const all = results.flat();
+      const listing = all.find((l: any) => l.id === editId);
+      if (!listing) return;
+      setForm({
+        shop_id: listing.shop_id,
+        title: listing.title,
+        description: listing.description || '',
+        price: String(listing.price),
+        quantity: String(listing.quantity),
+        tags: listing.tags || [],
+        who_made: listing.who_made || 'i_did',
+        when_made: listing.when_made || 'made_to_order',
+        is_supply: listing.is_supply === 1,
+        shipping_profile_id: listing.shipping_profile_id || '',
+      });
+      setExistingImages(listing.images || []);
+      setStep(2); // Start at details step for editing
+    });
+  }, [editId, shops.length]);
 
   const onDrop = useCallback((accepted: File[]) => {
     const newFiles = accepted.slice(0, 10 - images.length);
@@ -63,15 +96,21 @@ export default function NewListing() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
+      if (isEdit && editId) {
+        await listingsApi.update(editId, {
+          ...form,
+          price: parseFloat(form.price),
+          quantity: parseInt(form.quantity),
+        });
+        for (const img of images) await listingsApi.uploadImage(editId, img);
+        return { id: editId };
+      }
       const listing = await listingsApi.create(form.shop_id, {
         ...form,
         price: parseFloat(form.price),
         quantity: parseInt(form.quantity),
       });
-      // Upload images
-      for (const img of images) {
-        await listingsApi.uploadImage(listing.id, img);
-      }
+      for (const img of images) await listingsApi.uploadImage(listing.id, img);
       return listing;
     },
     onSuccess: () => {
@@ -117,7 +156,10 @@ export default function NewListing() {
 
   return (
     <div className="p-4 safe-top max-w-lg mx-auto">
-      <h1 className="text-xl font-bold mb-4 pt-2">מוצר חדש</h1>
+      <div className="flex items-center gap-2 mb-4 pt-2">
+        <button onClick={() => navigate(-1)} className="p-1 text-etsy-gray"><ArrowRight size={20} /></button>
+        <h1 className="text-xl font-bold">{isEdit ? 'עריכת מוצר' : 'מוצר חדש'}</h1>
+      </div>
 
       {/* Steps */}
       <div className="flex items-center gap-1 mb-6">
@@ -141,16 +183,27 @@ export default function NewListing() {
             <p className="font-medium">גרור תמונות לכאן</p>
             <p className="text-sm text-etsy-gray">או לחץ לבחירה • עד 10 תמונות</p>
           </div>
-          {imagePreviews.length > 0 && (
+          {(existingImages.length > 0 || imagePreviews.length > 0) && (
             <div className="grid grid-cols-3 gap-2">
+              {existingImages.map((src, i) => (
+                <div key={`existing-${i}`} className="relative aspect-square">
+                  <img src={src} className="w-full h-full object-cover rounded-lg" alt="" />
+                  <button onClick={() => setExistingImages(p => p.filter((_, j) => j !== i))}
+                    className="absolute top-1 right-1 w-5 h-5 bg-black/60 rounded-full flex items-center justify-center">
+                    <X size={10} className="text-white" />
+                  </button>
+                  {i === 0 && imagePreviews.length === 0 && <span className="absolute bottom-1 left-1 text-xs bg-etsy-orange text-white px-1 rounded">ראשי</span>}
+                </div>
+              ))}
               {imagePreviews.map((src, i) => (
-                <div key={i} className="relative aspect-square">
+                <div key={`new-${i}`} className="relative aspect-square">
                   <img src={src} className="w-full h-full object-cover rounded-lg" alt="" />
                   <button onClick={() => { setImages(p => p.filter((_, j) => j !== i)); setImagePreviews(p => p.filter((_, j) => j !== i)); }}
                     className="absolute top-1 right-1 w-5 h-5 bg-black/60 rounded-full flex items-center justify-center">
                     <X size={10} className="text-white" />
                   </button>
-                  {i === 0 && <span className="absolute bottom-1 left-1 text-xs bg-etsy-orange text-white px-1 rounded">ראשי</span>}
+                  {i === 0 && existingImages.length === 0 && <span className="absolute bottom-1 left-1 text-xs bg-etsy-orange text-white px-1 rounded">ראשי</span>}
+                  <span className="absolute top-1 left-1 text-xs bg-blue-500 text-white px-1 rounded">חדש</span>
                 </div>
               ))}
             </div>

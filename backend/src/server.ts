@@ -10,6 +10,7 @@ import authRouter from './routes/auth.js';
 import listingsRouter from './routes/listings.js';
 import researchRouter from './routes/research.js';
 import settingsRouter from './routes/settings.js';
+import ordersRouter from './routes/orders.js';
 import './db/database.js'; // Initialize DB
 
 const app = express();
@@ -39,6 +40,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/listings', listingsRouter);
 app.use('/api/research', researchRouter);
 app.use('/api/settings', settingsRouter);
+app.use('/api/orders', ordersRouter);
 app.use('/uploads', express.static(uploadsDir));
 
 app.get('/api/health', (_, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));

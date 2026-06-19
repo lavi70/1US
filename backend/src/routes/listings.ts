@@ -2,8 +2,13 @@ import { Router } from 'express';
 import multer from 'multer';
 import sharp from 'sharp';
 import { v4 as uuidv4 } from 'uuid';
+import path from 'path';
+import fs from 'fs';
 import db from '../db/database.js';
 import { createListing, updateListing, deleteListing, getShopListings, uploadListingImage } from '../services/etsy.js';
+
+const UPLOADS_DIR = path.join(process.cwd(), 'uploads', 'listings');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -120,13 +125,20 @@ router.post('/:id/images', upload.single('image'), async (req, res) => {
 
     let imageUrl = '';
 
-    // If listing is published on Etsy, upload there too
+    // Save to disk first
+    const filename = `${req.params.id}-${Date.now()}.jpg`;
+    const filepath = path.join(UPLOADS_DIR, filename);
+    fs.writeFileSync(filepath, optimized);
+    imageUrl = `/uploads/listings/${filename}`;
+
+    // Also upload to Etsy if listing is already published
     if (listing.etsy_listing_id && listing.status !== 'draft') {
-      const result = await uploadListingImage(listing.shop_id, listing.etsy_listing_id, optimized, 'image/jpeg');
-      imageUrl = result.url_570xN || result.url_fullxfull || '';
-    } else {
-      // Store locally (in a real app, use cloud storage)
-      imageUrl = `data:image/jpeg;base64,${optimized.toString('base64').substring(0, 100)}...`;
+      try {
+        const result = await uploadListingImage(listing.shop_id, listing.etsy_listing_id, optimized, 'image/jpeg');
+        imageUrl = result.url_570xN || result.url_fullxfull || imageUrl;
+      } catch (e) {
+        // Keep local URL if Etsy upload fails
+      }
     }
 
     const images = JSON.parse(listing.images || '[]');

@@ -19,7 +19,7 @@ export interface Shop {
   status: string;
 }
 
-function buildProxyAgent(shop: Shop) {
+export function buildProxyAgent(shop: Shop) {
   if (!shop.proxy_url) return undefined;
   let url = shop.proxy_url;
   if (shop.proxy_username && shop.proxy_password) {
@@ -31,7 +31,7 @@ function buildProxyAgent(shop: Shop) {
   return new HttpsProxyAgent(url);
 }
 
-function getClient(shop: Shop): AxiosInstance {
+export function getClient(shop: Shop): AxiosInstance {
   const agent = buildProxyAgent(shop);
   return axios.create({
     baseURL: ETSY_BASE,
@@ -46,7 +46,7 @@ function getClient(shop: Shop): AxiosInstance {
 }
 
 // Rate limiter: max 10 req/sec per shop (Etsy limit)
-async function rateLimit(shopId: string) {
+export async function rateLimit(shopId: string) {
   const now = Math.floor(Date.now() / 1000);
   const row = db.prepare('SELECT * FROM rate_limits WHERE shop_id = ?').get(shopId) as any;
   if (!row || row.window_start < now) {
@@ -61,7 +61,7 @@ async function rateLimit(shopId: string) {
   db.prepare('UPDATE rate_limits SET requests_this_second = requests_this_second + 1 WHERE shop_id = ?').run(shopId);
 }
 
-async function refreshTokenIfNeeded(shop: Shop): Promise<Shop> {
+export async function refreshTokenIfNeeded(shop: Shop): Promise<Shop> {
   if (!shop.token_expires_at || !shop.refresh_token) return shop;
   const expiresIn = shop.token_expires_at - Math.floor(Date.now() / 1000);
   if (expiresIn > 300) return shop;
