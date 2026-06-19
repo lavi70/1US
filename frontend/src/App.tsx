@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom';
-import { Store, Search, PlusSquare, LayoutDashboard, Package, ShoppingBag, TrendingUp, MoreHorizontal, Sparkles, Zap } from 'lucide-react';
+import { Store, Search, PlusSquare, LayoutDashboard, Package, ShoppingBag, TrendingUp, MoreHorizontal, Sparkles, Zap, DollarSign, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import Dashboard from './pages/Dashboard';
 import Shops from './pages/Shops';
@@ -13,6 +13,8 @@ import Templates from './pages/Templates';
 import SettingsPage from './pages/Settings';
 import AIGenerator from './pages/AIGenerator';
 import QuickEdit from './pages/QuickEdit';
+import ProfitCalc from './pages/ProfitCalc';
+import SEOAudit from './pages/SEOAudit';
 
 function MoreMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (!open) return null;
@@ -22,6 +24,8 @@ function MoreMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
     { to: '/templates',   icon: Package,       label: 'תבניות' },
     { to: '/ai',          icon: Sparkles,      label: 'AI Generator' },
     { to: '/quick-edit',  icon: Zap,           label: 'עריכה מהירה' },
+    { to: '/profit',      icon: DollarSign,    label: 'מחשבון רווח' },
+    { to: '/seo-audit',   icon: ShieldCheck,   label: 'SEO Audit' },
     { to: '/settings',    icon: Store,         label: 'הגדרות' },
   ];
   return (
@@ -52,7 +56,7 @@ function NavBar() {
     { to: '/orders',   icon: ShoppingBag,     label: 'הזמנות' },
   ];
 
-  const moreRoutes = ['/analytics', '/bulk', '/templates', '/settings', '/ai', '/quick-edit'];
+  const moreRoutes = ['/analytics', '/bulk', '/templates', '/settings', '/ai', '/quick-edit', '/profit', '/seo-audit'];
   const moreActive = moreRoutes.some(r => location.pathname.startsWith(r));
 
   return (
@@ -96,6 +100,8 @@ export default function App() {
           <Route path="/templates"         element={<Templates />} />
           <Route path="/ai"               element={<AIGenerator />} />
           <Route path="/quick-edit"        element={<QuickEdit />} />
+          <Route path="/profit"            element={<ProfitCalc />} />
+          <Route path="/seo-audit"         element={<SEOAudit />} />
           <Route path="/settings"          element={<SettingsPage />} />
         </Routes>
         <NavBar />
