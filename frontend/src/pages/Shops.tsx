@@ -1,7 +1,21 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, Link, Unlink, Settings, ChevronDown, ChevronUp, Globe } from 'lucide-react';
+import { Plus, Trash2, Link, Unlink, ChevronDown, ChevronUp, Globe } from 'lucide-react';
 import { shopsApi, authApi } from '../services/api';
+
+function buildProxyUrl(host: string, port: string) {
+  if (!host || !port) return '';
+  return `http://${host}:${port}`;
+}
+
+function parseProxyUrl(url: string): { host: string; port: string } {
+  try {
+    const u = new URL(url);
+    return { host: u.hostname, port: u.port };
+  } catch {
+    return { host: '', port: '' };
+  }
+}
 
 export default function Shops() {
   const qc = useQueryClient();
@@ -51,7 +65,7 @@ export default function Shops() {
         </div>
       ) : (
         <div className="space-y-3">
-          {shops.map((shop: any) => (
+          {(shops as any[]).map((shop: any) => (
             <ShopItem
               key={shop.id}
               shop={shop}
@@ -69,8 +83,18 @@ export default function Shops() {
 }
 
 function AddShopForm({ onSubmit, onCancel, loading }: { onSubmit: (d: any) => void; onCancel: () => void; loading: boolean }) {
-  const [form, setForm] = useState({ name: '', proxy_url: '', proxy_username: '', proxy_password: '' });
+  const [name, setName] = useState('');
   const [showProxy, setShowProxy] = useState(false);
+  const [proxy, setProxy] = useState({ host: '', port: '', username: '', password: '' });
+
+  const handleSubmit = () => {
+    onSubmit({
+      name,
+      proxy_url: buildProxyUrl(proxy.host, proxy.port),
+      proxy_username: proxy.username || undefined,
+      proxy_password: proxy.password || undefined,
+    });
+  };
 
   return (
     <div className="card p-4 mb-4">
@@ -78,7 +102,7 @@ function AddShopForm({ onSubmit, onCancel, loading }: { onSubmit: (d: any) => vo
       <div className="space-y-3">
         <div>
           <label className="label">שם החנות *</label>
-          <input className="input" placeholder="My Etsy Store" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+          <input className="input" placeholder="My Etsy Store" value={name} onChange={e => setName(e.target.value)} />
         </div>
         <button type="button" onClick={() => setShowProxy(!showProxy)}
           className="flex items-center gap-1 text-sm text-etsy-orange">
@@ -86,24 +110,34 @@ function AddShopForm({ onSubmit, onCancel, loading }: { onSubmit: (d: any) => vo
         </button>
         {showProxy && (
           <div className="space-y-2 border border-etsy-border rounded-lg p-3 bg-gray-50">
-            <div>
-              <label className="label text-xs">כתובת פרוקסי</label>
-              <input className="input text-sm" placeholder="http://proxy.example.com:8080" value={form.proxy_url} onChange={e => setForm({ ...form, proxy_url: e.target.value })} />
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="label text-xs">כתובת IP</label>
+                <input className="input text-sm font-mono" placeholder="192.168.1.1" value={proxy.host}
+                  onChange={e => setProxy({ ...proxy, host: e.target.value })} />
+              </div>
+              <div>
+                <label className="label text-xs">פורט</label>
+                <input className="input text-sm font-mono" placeholder="8080" value={proxy.port}
+                  onChange={e => setProxy({ ...proxy, port: e.target.value })} />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="label text-xs">שם משתמש</label>
-                <input className="input text-sm" value={form.proxy_username} onChange={e => setForm({ ...form, proxy_username: e.target.value })} />
+                <input className="input text-sm" value={proxy.username}
+                  onChange={e => setProxy({ ...proxy, username: e.target.value })} />
               </div>
               <div>
                 <label className="label text-xs">סיסמה</label>
-                <input className="input text-sm" type="password" value={form.proxy_password} onChange={e => setForm({ ...form, proxy_password: e.target.value })} />
+                <input className="input text-sm" type="password" value={proxy.password}
+                  onChange={e => setProxy({ ...proxy, password: e.target.value })} />
               </div>
             </div>
           </div>
         )}
         <div className="flex gap-2">
-          <button onClick={() => onSubmit(form)} disabled={!form.name || loading} className="btn-primary flex-1">
+          <button onClick={handleSubmit} disabled={!name || loading} className="btn-primary flex-1">
             {loading ? 'שומר...' : 'הוסף חנות'}
           </button>
           <button onClick={onCancel} className="btn-secondary px-4">ביטול</button>
@@ -117,12 +151,28 @@ function ShopItem({ shop, expanded, onToggle, onConnect, onDisconnect, onDelete 
   const connected = shop.status === 'connected';
   const qc = useQueryClient();
 
+  const existing = parseProxyUrl(shop.proxy_url || '');
+  const [proxy, setProxy] = useState({
+    host: existing.host,
+    port: existing.port,
+    username: shop.proxy_username || '',
+    password: '',
+  });
+
   const updateMutation = useMutation({
     mutationFn: (data: any) => shopsApi.update(shop.id, data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['shops'] }),
   });
 
-  const [proxyForm, setProxyForm] = useState({ proxy_url: shop.proxy_url || '', proxy_username: shop.proxy_username || '', proxy_password: '' });
+  const handleSaveProxy = () => {
+    updateMutation.mutate({
+      proxy_url: buildProxyUrl(proxy.host, proxy.port),
+      proxy_username: proxy.username || undefined,
+      proxy_password: proxy.password || undefined,
+    });
+  };
+
+  const hasProxy = !!(proxy.host && proxy.port);
 
   return (
     <div className="card overflow-hidden">
@@ -132,7 +182,10 @@ function ShopItem({ shop, expanded, onToggle, onConnect, onDisconnect, onDelete 
         </div>
         <div className="flex-1 min-w-0">
           <p className="font-semibold truncate">{shop.name}</p>
-          <p className="text-xs text-etsy-gray">{connected ? `Etsy ID: ${shop.etsy_shop_id}` : 'לא מחובר'}</p>
+          <p className="text-xs text-etsy-gray">
+            {connected ? `Etsy ID: ${shop.etsy_shop_id}` : 'לא מחובר'}
+            {hasProxy && <span className="ml-2 text-blue-500">🔒 פרוקסי</span>}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <span className={connected ? 'badge-green' : 'badge-gray'}>{connected ? 'מחובר' : 'מנותק'}</span>
@@ -144,17 +197,33 @@ function ShopItem({ shop, expanded, onToggle, onConnect, onDisconnect, onDelete 
         <div className="border-t border-etsy-border px-4 pb-4 pt-3 space-y-3">
           {/* Proxy Settings */}
           <div className="space-y-2">
-            <label className="label flex items-center gap-1"><Globe size={14} /> פרוקסי</label>
-            <input className="input text-sm" placeholder="http://proxy:port" value={proxyForm.proxy_url}
-              onChange={e => setProxyForm({ ...proxyForm, proxy_url: e.target.value })} />
+            <label className="label flex items-center gap-1"><Globe size={14} /> הגדרות פרוקסי</label>
             <div className="grid grid-cols-2 gap-2">
-              <input className="input text-sm" placeholder="שם משתמש" value={proxyForm.proxy_username}
-                onChange={e => setProxyForm({ ...proxyForm, proxy_username: e.target.value })} />
-              <input className="input text-sm" type="password" placeholder="סיסמה" value={proxyForm.proxy_password}
-                onChange={e => setProxyForm({ ...proxyForm, proxy_password: e.target.value })} />
+              <div>
+                <label className="label text-xs">כתובת IP</label>
+                <input className="input text-sm font-mono" placeholder="192.168.1.1"
+                  value={proxy.host} onChange={e => setProxy({ ...proxy, host: e.target.value })} />
+              </div>
+              <div>
+                <label className="label text-xs">פורט</label>
+                <input className="input text-sm font-mono" placeholder="8080"
+                  value={proxy.port} onChange={e => setProxy({ ...proxy, port: e.target.value })} />
+              </div>
             </div>
-            <button onClick={() => updateMutation.mutate(proxyForm)} className="btn-secondary text-sm w-full">
-              {updateMutation.isPending ? 'שומר...' : 'עדכן פרוקסי'}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="label text-xs">שם משתמש</label>
+                <input className="input text-sm" placeholder="user"
+                  value={proxy.username} onChange={e => setProxy({ ...proxy, username: e.target.value })} />
+              </div>
+              <div>
+                <label className="label text-xs">סיסמה</label>
+                <input className="input text-sm" type="password" placeholder="••••••"
+                  value={proxy.password} onChange={e => setProxy({ ...proxy, password: e.target.value })} />
+              </div>
+            </div>
+            <button onClick={handleSaveProxy} className="btn-secondary text-sm w-full">
+              {updateMutation.isPending ? 'שומר...' : 'שמור פרוקסי'}
             </button>
           </div>
 
