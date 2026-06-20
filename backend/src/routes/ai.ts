@@ -9,7 +9,7 @@ router.post('/generate', async (req, res) => {
     const { keyword, style, material, audience } = req.body;
     if (!keyword) return res.status(400).json({ error: 'keyword is required' });
 
-    if (!process.env.GEMINI_API_KEY) {
+    if (!process.env.GEMINI_API_KEY && !process.env.GIMINY) {
       return res.status(400).json({ error: 'GEMINI_API_KEY לא מוגדר. הוסף אותו בהגדרות.' });
     }
 
@@ -44,7 +44,7 @@ Respond in JSON format only:
   "seo_notes": ["tip1", "tip2", "tip3"]
 }`;
 
-    const key = process.env.GEMINI_API_KEY!;
+    const key = process.env.GEMINI_API_KEY || process.env.GIMINY || '';
     const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.0-pro:generateContent?key=${key}`;
     const geminiRes = await axios.post(url, { contents: [{ parts: [{ text: prompt }] }] });
     const content = geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';

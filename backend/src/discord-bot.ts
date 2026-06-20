@@ -18,7 +18,7 @@ const TOKEN = process.env.DISCORD_BOT_TOKEN || '';
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '';
 
 async function geminiAsk(prompt: string): Promise<string> {
-  const key = process.env.GEMINI_API_KEY || '';
+  const key = process.env.GEMINI_API_KEY || process.env.GIMINY || '';
   if (!key) throw new Error('GEMINI_API_KEY חסר');
 
   // Try models in order until one works
@@ -1035,7 +1035,7 @@ client.on('interactionCreate', async (interaction: any) => {
   //  AI COMMANDS
   // ══════════════════════════════════════════════════════
   if (['ask','chat','summarize','code','translate-ai'].includes(commandName)) {
-    if (!process.env.GEMINI_API_KEY) {
+    if (!process.env.GEMINI_API_KEY && !process.env.GIMINY) {
       return interaction.editReply({embeds:[errEmbed('GEMINI_API_KEY לא מוגדר ב-Railway')]});
     }
 
