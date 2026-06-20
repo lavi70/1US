@@ -36,7 +36,8 @@ async function geminiAsk(prompt: string): Promise<string> {
       if (text) return text;
     } catch {}
   }
-  throw new Error('כל מודלי Gemini נכשלו. בדוק את המפתח ב-Railway.');
+  const envKeys = Object.keys(process.env).filter(k => !/(password|secret|token|discord)/i.test(k)).join(', ');
+  throw new Error(`כל מודלי Gemini נכשלו. Key נמצא: ${key ? 'כן' : 'לא'}. משתנים: ${envKeys}`);
 }
 
 if (!TOKEN || !CLIENT_ID) { console.error('❌ DISCORD_BOT_TOKEN or DISCORD_CLIENT_ID is not set'); process.exit(1); }
