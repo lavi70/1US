@@ -1553,7 +1553,7 @@ if (commandName === 'uptime') {
       // ── Chart: QuickChart candlestick dark theme ───────
       let chartUrl = '';
       if (closes.length >= 10) {
-        const N = Math.min(50, closes.length);
+        const N = Math.min(25, closes.length);
         const sO = opens.slice(-N), sH = highs.slice(-N), sL = lows.slice(-N);
         const sC = closes.slice(-N), sT = timestamps.slice(-N), sV = volumes.slice(-N);
         const labels = sT.map(t => { const d=new Date(t*1000); return `${d.getMonth()+1}/${d.getDate()}`; });
@@ -1640,31 +1640,31 @@ if (commandName === 'uptime') {
       const priceColor = change >= 0 ? '🟢' : '🔴';
       const arrow2 = change >= 0 ? '▲' : '▼';
 
+      // Trim long fields to avoid Discord 6000 char limit
+      const safeBreakoutAdvice = breakoutAdvice.slice(0, 400);
+      const safeNews = newsLines.map(l=>l.slice(0,180)).join('\n').slice(0,900);
+
       const e = new EmbedBuilder()
-        .setTitle(`${p.name||symbol}  ·  ${symbol}  ·  ${p.exchange||''}`)
+        .setTitle(`${priceColor} ${symbol} — ${p.name||symbol} | $${price.toFixed(2)} (${change>=0?'+':''}${change.toFixed(2)}%)`)
         .setDescription(
-          `# ${priceColor}  $${price.toFixed(2)}  ${arrow2}  ${change>=0?'+':''}${changeAbs.toFixed(2)}  (${change>=0?'+':''}${change.toFixed(2)}%)\n` +
-          `> ${capSize}  ·  ${p.finnhubIndustry||'—'}  ·  שווי שוק: **${marketCap}**\n\n` +
-          `**━━━━━━━━━━━━━━━━━━━━━━━━**\n` +
-          `## ${breakoutStatus}\n` +
-          `${breakoutAdvice}\n\n` +
-          `**━━━━━━━━━━━━━━━━━━━━━━━━**\n` +
-          `### ${mainVerdict}\n` +
-          `ציון: **${score}/100**  \`${scoreBar}\`\n` +
-          `> 📅 טווח שנתי: \`${rangeBar}\` **${rangePct}%** מהשפל\n` +
-          `> ⏱️ מגמה: **${trend}**  ·  נפח: **×${volSpike.toFixed(1)}**  ·  NY: ${now}`
+          `${capSize} · ${p.finnhubIndustry||'—'} · שווי: **${marketCap}**\n\n` +
+          `**${breakoutStatus}**\n${safeBreakoutAdvice}\n\n` +
+          `${mainVerdict} · ציון **${score}/100** \`${scoreBar}\`\n` +
+          `מגמה: **${trend}** · נפח ×${volSpike.toFixed(1)} · NY: ${now}`
         )
         .addFields(
-          {name:'💵 P/E', value:!pe?'—':pe<0?`${pe.toFixed(0)}\n🔴 בהפסד`:pe<15?`${pe.toFixed(0)}\n✅ זול`:pe<30?`${pe.toFixed(0)}\n🟡 הגיוני`:`${pe.toFixed(0)}\n🔴 יקר`, inline:true},
-          {name:'💰 EPS', value:eps?`$${eps.toFixed(2)}\n${eps>0?'✅ מרוויחה':'🔴 הפסד'}`:'—', inline:true},
-          {name:'⚡ בטא', value:!beta?'—':beta<0.8?`${beta.toFixed(2)}\n🟢 שקטה`:beta<1.5?`${beta.toFixed(2)}\n🟡 בינונית`:`${beta.toFixed(2)}\n🔴 תנודתית`, inline:true},
-          {name:'📈 צמיחה', value:revenueGrowth?`${revenueGrowth.toFixed(1)}%\n${revenueGrowth>15?'🚀 מהיר':revenueGrowth>5?'✅ טוב':revenueGrowth>0?'🟡 איטי':'🔴 מתכווס'}`:'—', inline:true},
-          {name:'💹 מרג\'ין', value:grossMargin?`${grossMargin.toFixed(1)}%\n${grossMargin>50?'✅ מעולה':grossMargin>30?'🟡 סביר':'🔴 נמוך'}`:'—', inline:true},
-          {name:'🏦 חוב', value:debtEq?`${debtEq.toFixed(2)}x\n${debtEq<0.5?'✅ בריא':debtEq<1.5?'🟡 בינוני':'🔴 גבוה'}`:'—', inline:true},
-          {name:'👨‍💼 אנליסטים', value:totalRec?`${analystBar}\n🟢 **${bullish}** קנייה  ·  ⚪ **${rec.hold||0}** המתן  ·  🔴 **${bearish}** מכירה\n*(${totalRec} אנליסטים סה"כ)*`:'אין נתונים', inline:false},
-          {name:'📰 חדשות', value:newsLines.length?newsLines.join('\n'):'אין חדשות', inline:false}
+          {name:'💵 P/E', value:!pe?'—':pe<0?`${pe.toFixed(0)} 🔴`:pe<15?`${pe.toFixed(0)} ✅`:pe<30?`${pe.toFixed(0)} 🟡`:`${pe.toFixed(0)} 🔴`, inline:true},
+          {name:'💰 EPS', value:eps?`$${eps.toFixed(2)} ${eps>0?'✅':'🔴'}`:'—', inline:true},
+          {name:'⚡ בטא', value:!beta?'—':beta<0.8?`${beta.toFixed(2)} 🟢`:beta<1.5?`${beta.toFixed(2)} 🟡`:`${beta.toFixed(2)} 🔴`, inline:true},
+          {name:'📈 צמיחה', value:revenueGrowth?`${revenueGrowth.toFixed(1)}% ${revenueGrowth>10?'✅':revenueGrowth>0?'🟡':'🔴'}`:'—', inline:true},
+          {name:'💹 מרג\'ין', value:grossMargin?`${grossMargin.toFixed(1)}% ${grossMargin>40?'✅':grossMargin>20?'🟡':'🔴'}`:'—', inline:true},
+          {name:'🏦 חוב', value:debtEq?`${debtEq.toFixed(2)}x ${debtEq<0.5?'✅':debtEq<1.5?'🟡':'🔴'}`:'—', inline:true},
+          {name:'📅 טווח שנתי', value:`$${low52.toFixed(0)} \`${rangeBar}\` $${high52.toFixed(0)} (${rangePct}%)`, inline:false},
+          {name:'👨‍💼 אנליסטים', value:totalRec?`${analystBar} 🟢${bullish} ⚪${rec.hold||0} 🔴${bearish} (${totalRec})`:'—', inline:false},
+          {name:'📰 חדשות', value:safeNews||'אין חדשות', inline:false}
         )
-        .setImage(chartUrl)
+        .setImage(chartUrl||'')
+
         .setColor(verdictColor)
         .setFooter({text:`${symbol} · Daily · MA20 · MA50 · R/S · ⚠️ לא ייעוץ פיננסי`})
         .setTimestamp();
