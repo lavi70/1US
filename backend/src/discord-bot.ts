@@ -10,11 +10,13 @@ import { exec, execSync } from 'child_process';
 import { promisify } from 'util';
 import * as os from 'os';
 import * as fs from 'fs';
+import Anthropic from '@anthropic-ai/sdk';
 
 const execAsync = promisify(exec);
 
 const TOKEN = process.env.DISCORD_BOT_TOKEN || '';
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '';
+const anthropic = new Anthropic({apiKey: process.env.ANTHROPIC_API_KEY||''});
 
 if (!TOKEN || !CLIENT_ID) { console.error('❌ DISCORD_BOT_TOKEN or DISCORD_CLIENT_ID is not set'); process.exit(1); }
 
@@ -160,7 +162,6 @@ const commands = [
   new SlashCommandBuilder().setName('joke').setDescription('בדיחה אקראית'),
   new SlashCommandBuilder().setName('quote').setDescription('ציטוט מעורר השראה'),
   new SlashCommandBuilder().setName('fact').setDescription('עובדה מעניינת'),
-  new SlashCommandBuilder().setName('meme').setDescription('מם אקראי'),
   new SlashCommandBuilder().setName('rate').setDescription('דרג משהו').addStringOption(o=>o.setName('thing').setDescription('מה לדרג?').setRequired(true)),
   new SlashCommandBuilder().setName('choose').setDescription('בחר בשבילי').addStringOption(o=>o.setName('options').setDescription('אפשרויות מופרדות בפסיק').setRequired(true)),
   new SlashCommandBuilder().setName('reverse').setDescription('הפוך טקסט').addStringOption(o=>o.setName('text').setDescription('טקסט').setRequired(true)),
@@ -170,7 +171,6 @@ const commands = [
   new SlashCommandBuilder().setName('roast').setDescription('ביקורת על משתמש').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)),
   new SlashCommandBuilder().setName('compliment').setDescription('מחמאה למשתמש').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)),
   new SlashCommandBuilder().setName('random').setDescription('מספר אקראי').addIntegerOption(o=>o.setName('min').setDescription('מינימום').setRequired(false)).addIntegerOption(o=>o.setName('max').setDescription('מקסימום').setRequired(false)),
-  new SlashCommandBuilder().setName('tictactoe').setDescription('משחק איקס עיגול').addUserOption(o=>o.setName('opponent').setDescription('יריב').setRequired(true)),
 
   // UTILITY
   new SlashCommandBuilder().setName('announce').setDescription('הכרזה').addStringOption(o=>o.setName('message').setDescription('הודעה').setRequired(true)).addChannelOption(o=>o.setName('channel').setDescription('ערוץ').setRequired(false)),
@@ -180,12 +180,10 @@ const commands = [
   new SlashCommandBuilder().setName('suggest').setDescription('הצעה לשרת').addStringOption(o=>o.setName('suggestion').setDescription('ההצעה שלך').setRequired(true)),
   new SlashCommandBuilder().setName('afk').setDescription('הגדר מצב AFK').addStringOption(o=>o.setName('reason').setDescription('סיבה').setRequired(false)),
   new SlashCommandBuilder().setName('reminder').setDescription('תזכורת').addStringOption(o=>o.setName('message').setDescription('מה לזכור').setRequired(true)).addIntegerOption(o=>o.setName('minutes').setDescription('בעוד כמה דקות').setRequired(true)),
-  new SlashCommandBuilder().setName('translate').setDescription('תרגם טקסט').addStringOption(o=>o.setName('text').setDescription('טקסט').setRequired(true)),
   new SlashCommandBuilder().setName('qr').setDescription('צור QR Code').addStringOption(o=>o.setName('text').setDescription('טקסט/URL').setRequired(true)),
   new SlashCommandBuilder().setName('color').setDescription('מידע על צבע').addStringOption(o=>o.setName('hex').setDescription('קוד hex').setRequired(true)),
   new SlashCommandBuilder().setName('math').setDescription('חשב').addStringOption(o=>o.setName('expression').setDescription('ביטוי מתמטי').setRequired(true)),
   new SlashCommandBuilder().setName('timestamp').setDescription('זמן עכשיו'),
-  new SlashCommandBuilder().setName('weather').setDescription('מזג אוויר').addStringOption(o=>o.setName('city').setDescription('עיר').setRequired(true)),
 
   // SERVER MANAGEMENT (SYSTEM)
   new SlashCommandBuilder().setName('status').setDescription('סטטוס השרת'),
@@ -211,6 +209,13 @@ const commands = [
   new SlashCommandBuilder().setName('setup-verify').setDescription('הגדרת מערכת אימות לשרת (Admin)').addRoleOption(o=>o.setName('role').setDescription('תפקיד Verified').setRequired(true)).addChannelOption(o=>o.setName('channel').setDescription('ערוץ אימות (ברירת מחדל: נוצר אוטומטית)').setRequired(false)),
   new SlashCommandBuilder().setName('verify-stats').setDescription('סטטיסטיקות אימות'),
   new SlashCommandBuilder().setName('unverify').setDescription('הסרת אימות ממשתמש (Admin)').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)),
+
+  // AI
+  new SlashCommandBuilder().setName('ask').setDescription('🤖 שאל את Claude AI שאלה חכמה').addStringOption(o=>o.setName('question').setDescription('השאלה שלך').setRequired(true)),
+  new SlashCommandBuilder().setName('chat').setDescription('💬 שוחח עם Claude AI').addStringOption(o=>o.setName('message').setDescription('הודעה').setRequired(true)),
+  new SlashCommandBuilder().setName('summarize').setDescription('📝 סכם טקסט עם AI').addStringOption(o=>o.setName('text').setDescription('טקסט לסיכום').setRequired(true)),
+  new SlashCommandBuilder().setName('code').setDescription('💻 בקש קוד מ-AI').addStringOption(o=>o.setName('request').setDescription('מה הקוד צריך לעשות').setRequired(true)).addStringOption(o=>o.setName('language').setDescription('שפת תכנות').setRequired(false)),
+  new SlashCommandBuilder().setName('translate-ai').setDescription('🌐 תרגם עם AI').addStringOption(o=>o.setName('text').setDescription('טקסט לתרגום').setRequired(true)).addStringOption(o=>o.setName('language').setDescription('לאיזו שפה?').setRequired(true)),
 
   // SERVER SETUP
   new SlashCommandBuilder().setName('setup-server').setDescription('🏗️ בנה שרת מקצועי מלא עם ערוצים, תפקידים וטיקטים (Admin)').addStringOption(o=>o.setName('name').setDescription('שם השרת (אופציונלי)').setRequired(false)),
@@ -1006,6 +1011,55 @@ client.on('interactionCreate', async (interaction: any) => {
   }
 
   // ══════════════════════════════════════════════════════
+  //  AI COMMANDS
+  // ══════════════════════════════════════════════════════
+  if (['ask','chat','summarize','code','translate-ai'].includes(commandName)) {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return interaction.editReply({embeds:[errEmbed('ANTHROPIC_API_KEY לא מוגדר ב-Railway')]});
+    }
+
+    let prompt = '';
+    let systemPrompt = 'אתה עוזר AI חכם בשם Yaniv Bot. ענה בעברית אלא אם ביקשו אחרת. היה מועיל, ידידותי וקצר.';
+
+    if (commandName === 'ask' || commandName === 'chat') {
+      prompt = interaction.options.getString('question') || interaction.options.getString('message');
+    } else if (commandName === 'summarize') {
+      const text = interaction.options.getString('text');
+      prompt = `סכם את הטקסט הבא בקצרה ובנקודות עיקריות:\n\n${text}`;
+    } else if (commandName === 'code') {
+      const req = interaction.options.getString('request');
+      const lang = interaction.options.getString('language') || 'JavaScript';
+      prompt = `כתוב קוד ב-${lang} שעושה: ${req}\n\nהסבר קצר + קוד בלוק.`;
+      systemPrompt = `אתה מומחה תכנות. ענה עם הסבר קצר וקוד נקי. השתמש ב-markdown code blocks.`;
+    } else if (commandName === 'translate-ai') {
+      const text = interaction.options.getString('text');
+      const lang = interaction.options.getString('language');
+      prompt = `תרגם את הטקסט הבא ל-${lang}:\n\n${text}`;
+    }
+
+    try {
+      const msg = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: [{role:'user', content:prompt}],
+      });
+      const response = msg.content[0].type === 'text' ? msg.content[0].text : 'שגיאה';
+
+      const cmdEmoji = commandName==='code'?'💻':commandName==='summarize'?'📝':commandName==='translate-ai'?'🌐':'🤖';
+      const e = new EmbedBuilder()
+        .setTitle(`${cmdEmoji} Yaniv AI`)
+        .setDescription(response.slice(0,4000))
+        .setColor(0x764ba2)
+        .setFooter({text:`שאל: ${user.username} | Powered by Claude AI 🚀`})
+        .setTimestamp();
+      return interaction.editReply({embeds:[e]});
+    } catch(e:any) {
+      return interaction.editReply({embeds:[errEmbed(`שגיאת AI: ${e.message?.slice(0,200)}`)]});
+    }
+  }
+
+  // ══════════════════════════════════════════════════════
   //  SETUP SERVER
   // ══════════════════════════════════════════════════════
   if (commandName === 'setup-server') {
@@ -1374,9 +1428,11 @@ client.on('guildMemberAdd', async (member: any) => {
   verifyChannel.send({content:`<@${member.id}>`, embeds:[e]}).catch(()=>{});
 });
 
-// ─── AFK detection ────────────────────────────────────────────────────────────
+// ─── Message handler (AFK + AI mentions) ──────────────────────────────────────
 client.on('messageCreate', async (message: any) => {
   if (message.author.bot) return;
+
+  // AFK
   if (afkUsers[message.author.id]) {
     delete afkUsers[message.author.id];
     message.reply(`👋 ברוך שובך **${message.author.username}**! הוסר מצב AFK.`).catch(()=>{});
@@ -1384,6 +1440,25 @@ client.on('messageCreate', async (message: any) => {
   for (const mention of message.mentions?.users?.values()||[]) {
     if (afkUsers[mention.id]) {
       message.reply(`💤 **${mention.username}** כרגע AFK: ${afkUsers[mention.id]}`).catch(()=>{});
+    }
+  }
+
+  // AI — ענה כשמזכירים את הבוט
+  if (message.mentions?.has(client.user) && process.env.ANTHROPIC_API_KEY) {
+    const content = message.content.replace(/<@!?\d+>/g,'').trim();
+    if (!content) return message.reply('שאל אותי משהו! 🤖').catch(()=>{});
+    try {
+      message.channel.sendTyping().catch(()=>{});
+      const msg = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 512,
+        system: 'אתה עוזר AI חכם בשם Yaniv Bot. ענה בעברית, היה קצר וידידותי.',
+        messages: [{role:'user', content}],
+      });
+      const reply = msg.content[0].type==='text' ? msg.content[0].text : '...';
+      message.reply(`🤖 **Yaniv AI:** ${reply.slice(0,1900)}`).catch(()=>{});
+    } catch(e:any) {
+      message.reply(`❌ שגיאת AI: ${e.message?.slice(0,100)}`).catch(()=>{});
     }
   }
 });
