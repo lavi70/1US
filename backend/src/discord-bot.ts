@@ -29,15 +29,19 @@ async function geminiAsk(prompt: string): Promise<string> {
     'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-001:generateContent',
   ];
 
+  const errors: string[] = [];
   for (const baseUrl of models) {
     try {
       const res = await axios.post(`${baseUrl}?key=${key}`, { contents: [{ parts: [{ text: prompt }] }] });
       const text = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (text) return text;
-    } catch {}
+      errors.push(`${baseUrl.split('/models/')[1]}: תשובה ריקה`);
+    } catch(e: any) {
+      const msg = e.response?.data?.error?.message || e.message || 'unknown';
+      errors.push(`${baseUrl.split('/models/')[1]}: ${msg.slice(0,100)}`);
+    }
   }
-  const envKeys = Object.keys(process.env).filter(k => !/(password|secret|token|discord)/i.test(k)).join(', ');
-  throw new Error(`כל מודלי Gemini נכשלו. Key נמצא: ${key ? 'כן' : 'לא'}. משתנים: ${envKeys}`);
+  throw new Error(`שגיאות: ${errors.join(' | ')}`);
 }
 
 if (!TOKEN || !CLIENT_ID) { console.error('❌ DISCORD_BOT_TOKEN or DISCORD_CLIENT_ID is not set'); process.exit(1); }
