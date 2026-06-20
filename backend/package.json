@@ -9,15 +9,20 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "start:bot": "node dist/bot-main.js",
-    "bot": "tsx src/bot-main.ts"
+    "bot": "tsx src/bot-main.ts",
+    "discord": "tsx src/discord-main.ts",
+    "start:discord": "node dist/discord-main.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",
+    "@discordjs/rest": "^2.6.1",
     "@types/form-data": "^2.2.1",
     "@types/node-telegram-bot-api": "^0.64.15",
     "axios": "^1.7.2",
     "better-sqlite3": "^9.6.0",
     "cors": "^2.8.5",
+    "discord-api-types": "^0.38.49",
+    "discord.js": "^14.26.4",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-rate-limit": "^7.3.1",
