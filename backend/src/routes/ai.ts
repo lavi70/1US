@@ -45,7 +45,7 @@ Respond in JSON format only:
 }`;
 
     const key = process.env.GEMINI_API_KEY!;
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${key}`;
+    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${key}`;
     const geminiRes = await axios.post(url, { contents: [{ parts: [{ text: prompt }] }] });
     const content = geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
     const jsonMatch = content.match(/\{[\s\S]*\}/);
