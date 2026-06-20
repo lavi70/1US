@@ -902,30 +902,37 @@ if (commandName === 'uptime') {
   if (commandName === 'stock') {
     const symbol = interaction.options.getString('symbol').toUpperCase();
     try {
-      const res = await axios.get(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`, {
-        headers: { 'User-Agent': 'Mozilla/5.0' }
+      // Use Yahoo Finance v7 quote endpoint
+      const res = await axios.get(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}&lang=en&region=US`, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/json',
+          'Accept-Language': 'en-US,en;q=0.9',
+        }
       });
-      const meta = res.data?.chart?.result?.[0]?.meta;
-      if (!meta) return interaction.editReply({embeds:[errEmbed(`לא נמצאה מניה: ${symbol}`)]});
+      const quote = res.data?.quoteResponse?.result?.[0];
+      if (!quote) return interaction.editReply({embeds:[errEmbed(`לא נמצאה מניה: ${symbol}`)]});
 
-      const price = meta.regularMarketPrice;
-      const prev = meta.previousClose || meta.chartPreviousClose;
-      const change = price - prev;
-      const changePct = ((change / prev) * 100).toFixed(2);
+      const price = quote.regularMarketPrice;
+      const change = quote.regularMarketChange;
+      const changePct = quote.regularMarketChangePercent?.toFixed(2);
       const isUp = change >= 0;
       const color = isUp ? 0x2ecc71 : 0xe74c3c;
       const arrow = isUp ? '📈' : '📉';
 
       return interaction.editReply({embeds:[new EmbedBuilder()
-        .setTitle(`${arrow} ${symbol} — ${meta.longName || meta.shortName || symbol}`)
+        .setTitle(`${arrow} ${symbol} — ${quote.longName || quote.shortName || symbol}`)
         .setColor(color)
         .addFields(
           {name:'💵 מחיר', value:`**$${price?.toFixed(2)}**`, inline:true},
           {name:'📊 שינוי', value:`${isUp?'+':''}${change?.toFixed(2)} (${isUp?'+':''}${changePct}%)`, inline:true},
-          {name:'📅 סגירה אתמול', value:`$${prev?.toFixed(2)}`, inline:true},
-          {name:'📉 שפל יומי', value:`$${meta.regularMarketDayLow?.toFixed(2)||'N/A'}`, inline:true},
-          {name:'📈 שיא יומי', value:`$${meta.regularMarketDayHigh?.toFixed(2)||'N/A'}`, inline:true},
-          {name:'💹 נפח מסחר', value:meta.regularMarketVolume?.toLocaleString()||'N/A', inline:true},
+          {name:'📅 סגירה אתמול', value:`$${quote.regularMarketPreviousClose?.toFixed(2)||'N/A'}`, inline:true},
+          {name:'📉 שפל יומי', value:`$${quote.regularMarketDayLow?.toFixed(2)||'N/A'}`, inline:true},
+          {name:'📈 שיא יומי', value:`$${quote.regularMarketDayHigh?.toFixed(2)||'N/A'}`, inline:true},
+          {name:'💹 נפח מסחר', value:quote.regularMarketVolume?.toLocaleString()||'N/A', inline:true},
+          {name:'🏦 שווי שוק', value:quote.marketCap ? `$${(quote.marketCap/1e9).toFixed(1)}B` : 'N/A', inline:true},
+          {name:'📊 P/E Ratio', value:quote.trailingPE?.toFixed(2)||'N/A', inline:true},
+          {name:'🎯 52W טווח', value:`$${quote.fiftyTwoWeekLow?.toFixed(2)||'N/A'} - $${quote.fiftyTwoWeekHigh?.toFixed(2)||'N/A'}`, inline:true},
         )
         .setFooter({text:'מקור: Yahoo Finance | עדכון בזמן אמת'})
         .setTimestamp()
