@@ -22,7 +22,6 @@ import Finance from './pages/Finance';
 function MoreMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (!open) return null;
   const items = [
-    { to: '/finance',     icon: Wallet,        label: 'כסף' },
     { to: '/analytics',   icon: TrendingUp,    label: 'אנליטיקס' },
     { to: '/bulk',        icon: PlusSquare,    label: 'העלאה מרובה' },
     { to: '/templates',   icon: Package,       label: 'תבניות' },
@@ -57,11 +56,11 @@ function NavBar() {
     { to: '/',         icon: LayoutDashboard, label: 'ראשי' },
     { to: '/shops',    icon: Store,           label: 'חנויות' },
     { to: '/listings', icon: Package,         label: 'מוצרים' },
-    { to: '/research', icon: Search,          label: 'מחקר' },
     { to: '/orders',   icon: ShoppingBag,     label: 'הזמנות' },
+    { to: '/finance',  icon: Wallet,          label: 'כסף' },
   ];
 
-  const moreRoutes = ['/finance', '/analytics', '/bulk', '/templates', '/settings', '/ai', '/quick-edit', '/profit', '/seo-audit', '/inventory'];
+  const moreRoutes = ['/analytics', '/bulk', '/templates', '/settings', '/ai', '/quick-edit', '/profit', '/seo-audit', '/inventory'];
   const moreActive = moreRoutes.some(r => location.pathname.startsWith(r));
 
   return (
