@@ -197,7 +197,7 @@ const commands = [
   new SlashCommandBuilder().setName('restart').setDescription('הפעל מחדש שירות').addStringOption(o=>o.setName('service').setDescription('שם').setRequired(true)),
   new SlashCommandBuilder().setName('exec').setDescription('הרץ פקודה (Admin)').addStringOption(o=>o.setName('command').setDescription('הפקודה').setRequired(true)),
   new SlashCommandBuilder().setName('kill').setDescription('הרוג תהליך').addIntegerOption(o=>o.setName('pid').setDescription('PID').setRequired(true)),
-  new SlashCommandBuilder().setName('pinghost').setDescription('Ping לhost').addStringOption(o=>o.setName('host').setDescription('כתובת').setRequired(true)),
+
 
   // FINANCE & MARKET
   new SlashCommandBuilder().setName('stock').setDescription('📈 מחיר מניה בזמן אמת').addStringOption(o=>o.setName('symbol').setDescription('סימול (לדוגמה: AAPL, TSLA, GOOGL)').setRequired(true)),
@@ -220,6 +220,7 @@ const commands = [
 
   // SERVER SETUP
   new SlashCommandBuilder().setName('setup-server').setDescription('🏗️ בנה שרת מקצועי מלא עם ערוצים, תפקידים וטיקטים (Admin)').addStringOption(o=>o.setName('name').setDescription('שם השרת (אופציונלי)').setRequired(false)),
+  new SlashCommandBuilder().setName('setup-stocks').setDescription('📈 בנה שרת מניות מקצועי עם ערוצים ותפקידים (Admin)'),
   new SlashCommandBuilder().setName('setup-tickets').setDescription('🎫 הגדרת מערכת טיקטים (Admin)').addChannelOption(o=>o.setName('channel').setDescription('ערוץ פתיחת טיקטים').setRequired(false)),
   new SlashCommandBuilder().setName('close-ticket').setDescription('🔒 סגירת טיקט נוכחי'),
   new SlashCommandBuilder().setName('add-ticket').setDescription('הוסף משתמש לטיקט').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)),
@@ -1164,6 +1165,148 @@ if (commandName === 'uptime') {
     return interaction.editReply({embeds:[embed('🔒 אימות הוסר',`**${u.username}** הוסר מהמאומתים`,0xff6b35)]});
   }
 
+
+  // ══════════════════════════════════════════════════════
+  //  SETUP STOCKS SERVER
+  // ══════════════════════════════════════════════════════
+  if (commandName === 'setup-stocks') {
+    if (!isAdmin(member)) return interaction.editReply({embeds:[errEmbed('נדרשות הרשאות Admin')]});
+    await interaction.editReply({embeds:[embed('📈 בונה שרת מניות...','אנא המתן...',0x2ecc71)]});
+    try {
+      const everyone = guild?.roles?.everyone;
+
+      // תפקידים
+      const roles = [
+        {name:'👑 Owner',       color:0xf1c40f, hoist:true},
+        {name:'⚡ Admin',       color:0xe74c3c, hoist:true},
+        {name:'📊 Analyst',     color:0x3498db, hoist:true},
+        {name:'💎 Premium',     color:0x9b59b6, hoist:true},
+        {name:'🐂 Bull',        color:0x2ecc71, hoist:true},
+        {name:'🐻 Bear',        color:0xe74c3c, hoist:false},
+        {name:'✅ Verified',    color:0x1abc9c, hoist:false},
+        {name:'👥 Member',      color:0x95a5a6, hoist:false},
+      ];
+      const createdRoles: Record<string,any> = {};
+      for (const r of roles) {
+        try {
+          const role = await guild?.roles?.create({name:r.name,color:r.color,hoist:r.hoist,reason:'Stocks Server Setup'});
+          createdRoles[r.name] = role;
+        } catch {}
+      }
+
+      // ─── קטגוריות וערוצים ──────────────────
+      const cats = [
+        {
+          name:'📋 ─── מידע ───',
+          channels:[
+            {name:'📜│rules',         topic:'חוקי השרת'},
+            {name:'📢│announcements',  topic:'הכרזות חשובות'},
+            {name:'🎯│introduction',   topic:'הצג את עצמך'},
+          ]
+        },
+        {
+          name:'📈 ─── מניות ───',
+          channels:[
+            {name:'📊│stocks-general',  topic:'שיחה כללית על מניות'},
+            {name:'🔥│hot-picks',       topic:'מניות חמות של היום'},
+            {name:'📉│short-ideas',     topic:'פוזיציות שורט'},
+            {name:'🚀│long-ideas',      topic:'פוזיציות לונג'},
+            {name:'💹│day-trading',     topic:'טריידינג יומי'},
+            {name:'📆│swing-trading',   topic:'סווינג טריידינג'},
+          ]
+        },
+        {
+          name:'💰 ─── קריפטו ───',
+          channels:[
+            {name:'₿│bitcoin',          topic:'Bitcoin בלבד'},
+            {name:'Ξ│ethereum',         topic:'Ethereum בלבד'},
+            {name:'🪙│altcoins',        topic:'Altcoins וטוקנים'},
+            {name:'📡│crypto-news',     topic:'חדשות קריפטו'},
+          ]
+        },
+        {
+          name:'🛒 ─── Etsy & חנויות ───',
+          channels:[
+            {name:'🎨│etsy-general',    topic:'שיחה על Etsy'},
+            {name:'💡│product-ideas',   topic:'רעיונות למוצרים'},
+            {name:'📦│suppliers',       topic:'ספקים וסיטונאים'},
+            {name:'💰│pricing',         topic:'תמחור ורווחיות'},
+            {name:'📸│listings-review', topic:'ביקורת על Listings'},
+            {name:'🏆│success-stories', topic:'סיפורי הצלחה'},
+          ]
+        },
+        {
+          name:'📊 ─── ניתוח ───',
+          channels:[
+            {name:'📰│market-news',     topic:'חדשות שוק'},
+            {name:'📈│charts',          topic:'גרפים וטכניקל'},
+            {name:'🧮│fundamental',     topic:'ניתוח פונדמנטלי'},
+            {name:'🤖│bots-commands',   topic:'פקודות בוט'},
+          ]
+        },
+        {
+          name:'💬 ─── קהילה ───',
+          channels:[
+            {name:'💬│general',         topic:'שיחה חופשית'},
+            {name:'😂│memes',           topic:'מימים על שוק ההון'},
+            {name:'🎯│goals',           topic:'יעדים פיננסיים'},
+          ]
+        },
+        {
+          name:'🔊 ─── קולי ───',
+          channels:[
+            {name:'📞 Trading Room',    voice:true},
+            {name:'📊 Analysis Call',   voice:true},
+            {name:'🎮 Chill Zone',      voice:true},
+          ]
+        },
+      ];
+
+      for (const cat of cats) {
+        try {
+          const category = await guild?.channels?.create({name:cat.name, type:4});
+          for (const ch of cat.channels) {
+            try {
+              await guild?.channels?.create({
+                name: ch.name,
+                type: ch.voice ? 2 : 0,
+                parent: category?.id,
+                topic: ch.topic,
+                permissionOverwrites: ch.name.includes('staff') ? [
+                  {id:everyone.id, deny:['ViewChannel']},
+                  {id:createdRoles['⚡ Admin']?.id||'', allow:['ViewChannel']},
+                ] : [],
+              });
+            } catch {}
+          }
+        } catch {}
+      }
+
+      // embed ברוכים הבאים
+      const welcomeCh = guild?.channels?.cache?.find((c:any)=>c.name?.includes('rules'));
+      if (welcomeCh) {
+        const e = new EmbedBuilder()
+          .setTitle('📈 ברוכים הבאים לשרת המניות!')
+          .setColor(0x2ecc71)
+          .setDescription('**שרת מקצועי למסחר, ניתוח ו-Etsy**')
+          .addFields(
+            {name:'📊 פקודות מניות', value:'`/stock AAPL` — מחיר מניה\n`/crypto bitcoin` — מחיר קריפטו\n`/currency 100 USD ILS` — המרה', inline:false},
+            {name:'🛒 פקודות Etsy', value:'`/etsy-search keyword` — חפש מוצרים\n`/profit 5 25` — מחשבון רווח', inline:false},
+            {name:'📜 חוקים', value:'✅ כבדו זה את זה\n✅ אין ספאם\n✅ מסחר אחראי בלבד\n⚠️ אין המלצות השקעה מחייבות', inline:false},
+          )
+          .setFooter({text:'Bot by Yaniv 🚀 | DYOR - Do Your Own Research'});
+        await (welcomeCh as any).send({embeds:[e]}).catch(()=>{});
+      }
+
+      return interaction.editReply({embeds:[embed(
+        '✅ שרת מניות נבנה בהצלחה!',
+        `נוצרו **${roles.length} תפקידים** ו-**${cats.reduce((a,c)=>a+c.channels.length,0)} ערוצים**\n\n📈 מניות | 💰 קריפטו | 🛒 Etsy | 📊 ניתוח`,
+        0x2ecc71
+      )]});
+    } catch(e:any) {
+      return interaction.editReply({embeds:[errEmbed(`שגיאה: ${e.message}`)]});
+    }
+  }
 
   // ══════════════════════════════════════════════════════
   //  SETUP SERVER
