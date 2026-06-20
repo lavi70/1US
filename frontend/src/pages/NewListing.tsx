@@ -193,6 +193,7 @@ export default function NewListing() {
             <Image size={32} className="text-etsy-gray mx-auto mb-2" />
             <p className="font-medium">גרור תמונות לכאן</p>
             <p className="text-sm text-etsy-gray">או לחץ לבחירה • עד 10 תמונות</p>
+            <p className="text-xs text-orange-500 mt-1 font-medium">⚠️ מינימום 2000×2000 פיקסל</p>
           </div>
           {(existingImages.length > 0 || imagePreviews.length > 0) && (
             <div className="grid grid-cols-3 gap-2">
