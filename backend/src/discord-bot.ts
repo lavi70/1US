@@ -20,7 +20,7 @@ const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '';
 async function geminiAsk(prompt: string): Promise<string> {
   const key = process.env.GEMINI_API_KEY || '';
   if (!key) throw new Error('GEMINI_API_KEY חסר');
-  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${key}`;
+  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.0-pro:generateContent?key=${key}`;
   try {
     const res = await axios.post(url, { contents: [{ parts: [{ text: prompt }] }] });
     return res.data?.candidates?.[0]?.content?.parts?.[0]?.text || 'אין תשובה';
