@@ -101,7 +101,6 @@ const commands = [
   new SlashCommandBuilder().setName('uptime').setDescription('זמן פעילות'),
   new SlashCommandBuilder().setName('version').setDescription('גרסת הבוט'),
   new SlashCommandBuilder().setName('invite').setDescription('קישור הזמנה לבוט'),
-  new SlashCommandBuilder().setName('vote').setDescription('הצבע לבוט'),
 
   // SERVER INFO
   new SlashCommandBuilder().setName('serverinfo').setDescription('מידע על השרת'),
@@ -136,8 +135,6 @@ const commands = [
   new SlashCommandBuilder().setName('hide').setDescription('הסתרת ערוץ'),
   new SlashCommandBuilder().setName('show').setDescription('הצגת ערוץ'),
   new SlashCommandBuilder().setName('nuke').setDescription('מחיקת כל הודעות הערוץ'),
-  new SlashCommandBuilder().setName('move').setDescription('העברת משתמש לVC').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)).addChannelOption(o=>o.setName('channel').setDescription('ערוץ').setRequired(true)),
-  new SlashCommandBuilder().setName('deafen').setDescription('השתקת אודיו').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)),
   new SlashCommandBuilder().setName('bans').setDescription('רשימת חסומים'),
 
   // ROLES
@@ -178,7 +175,6 @@ const commands = [
   new SlashCommandBuilder().setName('embed').setDescription('שלח Embed').addStringOption(o=>o.setName('title').setDescription('כותרת').setRequired(true)).addStringOption(o=>o.setName('description').setDescription('תוכן').setRequired(true)).addStringOption(o=>o.setName('color').setDescription('צבע hex').setRequired(false)),
   new SlashCommandBuilder().setName('poll').setDescription('סקר').addStringOption(o=>o.setName('question').setDescription('שאלה').setRequired(true)).addStringOption(o=>o.setName('options').setDescription('אפשרויות מופרדות בפסיק').setRequired(false)),
   new SlashCommandBuilder().setName('giveaway').setDescription('הגרלה').addStringOption(o=>o.setName('prize').setDescription('פרס').setRequired(true)).addIntegerOption(o=>o.setName('minutes').setDescription('דקות').setRequired(true)).addIntegerOption(o=>o.setName('winners').setDescription('מספר זוכים').setRequired(false)),
-  new SlashCommandBuilder().setName('endgiveaway').setDescription('סיום הגרלה').addStringOption(o=>o.setName('id').setDescription('מזהה ההגרלה').setRequired(true)),
   new SlashCommandBuilder().setName('suggest').setDescription('הצעה לשרת').addStringOption(o=>o.setName('suggestion').setDescription('ההצעה שלך').setRequired(true)),
   new SlashCommandBuilder().setName('afk').setDescription('הגדר מצב AFK').addStringOption(o=>o.setName('reason').setDescription('סיבה').setRequired(false)),
   new SlashCommandBuilder().setName('reminder').setDescription('תזכורת').addStringOption(o=>o.setName('message').setDescription('מה לזכור').setRequired(true)).addIntegerOption(o=>o.setName('minutes').setDescription('בעוד כמה דקות').setRequired(true)),
@@ -195,9 +191,7 @@ const commands = [
   new SlashCommandBuilder().setName('ps').setDescription('תהליכים פעילים'),
   new SlashCommandBuilder().setName('top').setDescription('תהליכים כבדים'),
   new SlashCommandBuilder().setName('df').setDescription('שימוש בדיסק'),
-  new SlashCommandBuilder().setName('netstat').setDescription('חיבורי רשת'),
   new SlashCommandBuilder().setName('docker').setDescription('קונטיינרים'),
-  new SlashCommandBuilder().setName('dockerstats').setDescription('סטטיסטיקות Docker'),
   new SlashCommandBuilder().setName('services').setDescription('שירותים פעילים'),
   new SlashCommandBuilder().setName('logs').setDescription('לוגי שירות').addStringOption(o=>o.setName('service').setDescription('שם').setRequired(true)),
   new SlashCommandBuilder().setName('restart').setDescription('הפעל מחדש שירות').addStringOption(o=>o.setName('service').setDescription('שם').setRequired(true)),
@@ -1271,10 +1265,10 @@ client.on('interactionCreate', async (interaction: any) => {
   if (customId === 'verify_button') {
     const guildId = guild?.id;
     const cfg = verifyConfig[guildId];
-    if (!cfg) return interaction.reply({content:'❌ מערכת האימות לא מוגדרת. פנה למנהל.',ephemeral:true});
+    if (!cfg) return interaction.reply({content:'❌ מערכת האימות לא מוגדרת. פנה למנהל.',flags:64});
     const member = interaction.member;
     if (member?.roles?.cache?.has(cfg.roleId)) {
-      return interaction.reply({content:'✅ אתה כבר מאומת! יש לך גישה מלאה לשרת.',ephemeral:true});
+      return interaction.reply({content:'✅ אתה כבר מאומת! יש לך גישה מלאה לשרת.',flags:64});
     }
     try {
       await member?.roles?.add(cfg.roleId);
@@ -1288,10 +1282,10 @@ client.on('interactionCreate', async (interaction: any) => {
           .setThumbnail(user.displayAvatarURL({size:256}))
           .setFooter({text:'Bot by Yaniv 🚀'}).setTimestamp()
         ],
-        ephemeral:true
+        flags:64
       });
     } catch(e:any) {
-      return interaction.reply({content:`❌ שגיאה: ${e.message}`,ephemeral:true});
+      return interaction.reply({content:`❌ שגיאה: ${e.message}`,flags:64});
     }
   }
 
@@ -1340,9 +1334,9 @@ client.on('interactionCreate', async (interaction: any) => {
       await ticketChannel?.send({content:`<@${user.id}>${cfg?.staffRoleId?` <@&${cfg.staffRoleId}>`:''}`});
       await ticketChannel?.send({embeds:[tEmbed], components:[closeRow]});
 
-      return interaction.reply({content:`✅ הטיקט שלך נפתח! <#${ticketChannel?.id}>`, ephemeral:true});
+      return interaction.reply({content:`✅ הטיקט שלך נפתח! <#${ticketChannel?.id}>`, flags:64});
     } catch(e:any) {
-      return interaction.reply({content:`❌ שגיאה: ${e.message}`,ephemeral:true});
+      return interaction.reply({content:`❌ שגיאה: ${e.message}`,flags:64});
     }
   }
 
