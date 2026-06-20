@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import Anthropic from '@anthropic-ai/sdk';
+import Groq from 'groq-sdk';
 import { searchListings } from '../services/etsy.js';
 
 const router = Router();
@@ -9,11 +9,10 @@ router.post('/generate', async (req, res) => {
     const { keyword, style, material, audience } = req.body;
     if (!keyword) return res.status(400).json({ error: 'keyword is required' });
 
-    if (!process.env.ANTHROPIC_API_KEY) {
-      return res.status(400).json({ error: 'ANTHROPIC_API_KEY לא מוגדר. הוסף אותו בהגדרות.' });
+    if (!process.env.GROQ_API_KEY) {
+      return res.status(400).json({ error: 'GROQ_API_KEY לא מוגדר. הוסף אותו בהגדרות.' });
     }
 
-    // Fetch real market data to ground the AI
     let marketContext = '';
     try {
       const market = await searchListings(keyword, undefined, { limit: 10, sort_on: 'score' });
@@ -28,7 +27,7 @@ router.post('/generate', async (req, res) => {
       marketContext = `Market data: avg price $${avgPrice}, top tags: ${topTags.join(', ')}, sample titles: ${sampleTitles}`;
     } catch {}
 
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
     const prompt = `You are an expert Etsy SEO specialist. Generate a high-converting Etsy listing for the following product.
 
@@ -37,13 +36,6 @@ ${style ? `Style: ${style}` : ''}
 ${material ? `Material: ${material}` : ''}
 ${audience ? `Target audience: ${audience}` : ''}
 ${marketContext}
-
-Create an optimized Etsy listing with:
-1. Title (100-140 chars): Front-load primary keywords, use commas/pipes to separate keyword phrases, natural but keyword-rich
-2. Description (400-600 chars): Engaging, include keywords naturally, highlight benefits, mention materials, size/dimensions, care instructions, customization options
-3. Tags (exactly 13): Mix of single words and 2-3 word phrases, vary from broad to specific, include long-tail keywords
-4. Price suggestion: Based on market data, suggest min/max/recommended USD price
-5. SEO notes: 3 specific tips to improve this listing's visibility
 
 Respond in JSON format only:
 {
@@ -54,13 +46,13 @@ Respond in JSON format only:
   "seo_notes": ["tip1", "tip2", "tip3"]
 }`;
 
-    const message = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    const message = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
       max_tokens: 1024,
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const content = message.content[0].type === 'text' ? message.content[0].text : '';
+    const content = message.choices[0]?.message?.content || '';
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('Failed to parse AI response');
 
