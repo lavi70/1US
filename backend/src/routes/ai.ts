@@ -44,7 +44,7 @@ Respond in JSON format only:
   "seo_notes": ["tip1", "tip2", "tip3"]
 }`;
 
-    const key = process.env.GEMINI_API_KEY || process.env.GIMINY || '';
+    const key = process.env.GEMINI_API_KEY || process.env.GIMINY || process.env.GIMINY_API_KEY || process.env.GEMINI || process.env.GEMINI_KEY || '';
     const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.0-pro:generateContent?key=${key}`;
     const geminiRes = await axios.post(url, { contents: [{ parts: [{ text: prompt }] }] });
     const content = geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';

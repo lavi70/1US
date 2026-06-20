@@ -18,7 +18,7 @@ const TOKEN = process.env.DISCORD_BOT_TOKEN || '';
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '';
 
 async function geminiAsk(prompt: string): Promise<string> {
-  const key = process.env.GEMINI_API_KEY || process.env.GIMINY || '';
+  const key = process.env.GEMINI_API_KEY || process.env.GIMINY || process.env.GIMINY_API_KEY || process.env.GEMINI || process.env.GEMINI_KEY || '';
   if (!key) throw new Error('GEMINI_API_KEY חסר');
 
   // Try models in order until one works
@@ -123,6 +123,7 @@ const commands = [
   new SlashCommandBuilder().setName('help').setDescription('כל הפקודות'),
   new SlashCommandBuilder().setName('about').setDescription('אודות הבוט'),
   new SlashCommandBuilder().setName('ping').setDescription('בדיקת חיבור'),
+  new SlashCommandBuilder().setName('debug-env').setDescription('בדיקת משתני סביבה (אדמין)'),
   new SlashCommandBuilder().setName('uptime').setDescription('זמן פעילות'),
   new SlashCommandBuilder().setName('version').setDescription('גרסת הבוט'),
   new SlashCommandBuilder().setName('invite').setDescription('קישור הזמנה לבוט'),
@@ -313,6 +314,16 @@ client.on('interactionCreate', async (interaction: any) => {
   if (commandName === 'ping') {
     const lat = Date.now()-interaction.createdTimestamp;
     return interaction.editReply({embeds:[embed('🏓 Pong!',`⚡ Latency: **${lat}ms**\n💓 API: **${Math.round(client.ws.ping)}ms**`,0x00ff00)]});
+  }
+
+  if (commandName === 'debug-env') {
+    if (!isAdmin(interaction)) return interaction.editReply('❌ אדמין בלבד');
+    const aiKey = process.env.GEMINI_API_KEY || process.env.GIMINY || process.env.GIMINY_API_KEY || process.env.GEMINI || process.env.GEMINI_KEY || '';
+    const vars = Object.keys(process.env).filter(k => !/(password|secret|token)/i.test(k));
+    return interaction.editReply({embeds:[embed('🔍 Debug ENV',
+      `**AI Key נמצא:** ${aiKey ? `✅ (${aiKey.slice(0,8)}...)` : '❌ לא נמצא!'}\n**כל המשתנים:** ${vars.join(', ')}`,
+      aiKey ? 0x00ff00 : 0xff0000
+    )]});
   }
 
   if (commandName === 'uptime') {
