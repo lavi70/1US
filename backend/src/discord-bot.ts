@@ -1375,7 +1375,7 @@ if (commandName === 'uptime') {
           const e = await buildLiveEmbed();
           if (e) await msg.edit({embeds:[e], components:[stopBtn]});
         } catch {}
-      }, 60000);
+      }, 15000);
 
       liveTickers.set(msg.id, {symbol, channelId: interaction.channelId, intervalId});
     } catch(e:any) {
@@ -1691,7 +1691,7 @@ if (commandName === 'uptime') {
           const e = await buildAnalysis();
           if (e) await msg.edit({embeds:[e]});
         } catch {}
-      }, 60000);
+      }, 15000);
 
       liveAnalyses.set(msg.id, {symbol, channelId: interaction.channelId, intervalId});
     } catch(err:any) {
