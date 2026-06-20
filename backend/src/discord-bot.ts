@@ -123,7 +123,6 @@ const commands = [
   new SlashCommandBuilder().setName('help').setDescription('כל הפקודות'),
   new SlashCommandBuilder().setName('about').setDescription('אודות הבוט'),
   new SlashCommandBuilder().setName('ping').setDescription('בדיקת חיבור'),
-  new SlashCommandBuilder().setName('debug-env').setDescription('בדיקת משתני סביבה (אדמין)'),
   new SlashCommandBuilder().setName('uptime').setDescription('זמן פעילות'),
   new SlashCommandBuilder().setName('version').setDescription('גרסת הבוט'),
   new SlashCommandBuilder().setName('invite').setDescription('קישור הזמנה לבוט'),
@@ -1484,7 +1483,10 @@ client.on('messageCreate', async (message: any) => {
 });
 
 client.login(TOKEN);
+const aiKey = process.env.GEMINI_API_KEY || process.env.GIMINY || process.env.GIMINY_API_KEY || process.env.GEMINI || process.env.GEMINI_KEY || '';
 console.log('🎮 Discord Bot by Yaniv v3.0 מתחבר...');
+console.log(`🤖 Gemini AI Key: ${aiKey ? `✅ נמצא (${aiKey.slice(0,8)}...)` : '❌ לא נמצא!'}`);
+console.log(`📋 כל משתני הסביבה: ${Object.keys(process.env).join(', ')}`);
 
 export default client;
 // groq-sdk force redeploy Sat Jun 20 11:28:36 UTC 2026
