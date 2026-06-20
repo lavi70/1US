@@ -88,6 +88,10 @@ const suggestions: any[] = [];
 const verifyConfig: Record<string,{roleId:string,channelId:string}> = {};
 const verifiedUsers: Record<string,Set<string>> = {};
 
+// ─── Ticket storage ────────────────────────────────────────────────────────────
+const ticketConfig: Record<string,{categoryId:string,staffRoleId?:string}> = {};
+let ticketCounter: Record<string,number> = {};
+
 // ─── Commands List ────────────────────────────────────────────────────────────
 const commands = [
   // INFO
@@ -211,6 +215,13 @@ const commands = [
   new SlashCommandBuilder().setName('setup-verify').setDescription('הגדרת מערכת אימות לשרת (Admin)').addRoleOption(o=>o.setName('role').setDescription('תפקיד Verified').setRequired(true)).addChannelOption(o=>o.setName('channel').setDescription('ערוץ אימות (ברירת מחדל: נוצר אוטומטית)').setRequired(false)),
   new SlashCommandBuilder().setName('verify-stats').setDescription('סטטיסטיקות אימות'),
   new SlashCommandBuilder().setName('unverify').setDescription('הסרת אימות ממשתמש (Admin)').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)),
+
+  // SERVER SETUP
+  new SlashCommandBuilder().setName('setup-server').setDescription('🏗️ בנה שרת מקצועי מלא עם ערוצים, תפקידים וטיקטים (Admin)').addStringOption(o=>o.setName('name').setDescription('שם השרת (אופציונלי)').setRequired(false)),
+  new SlashCommandBuilder().setName('setup-tickets').setDescription('🎫 הגדרת מערכת טיקטים (Admin)').addChannelOption(o=>o.setName('channel').setDescription('ערוץ פתיחת טיקטים').setRequired(false)),
+  new SlashCommandBuilder().setName('close-ticket').setDescription('🔒 סגירת טיקט נוכחי'),
+  new SlashCommandBuilder().setName('add-ticket').setDescription('הוסף משתמש לטיקט').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)),
+  new SlashCommandBuilder().setName('ticket-rename').setDescription('שנה שם טיקט').addStringOption(o=>o.setName('name').setDescription('שם חדש').setRequired(true)),
 ].map(c=>c.toJSON());
 
 // ─── Register ─────────────────────────────────────────────────────────────────
@@ -997,40 +1008,357 @@ client.on('interactionCreate', async (interaction: any) => {
     verifiedUsers[guild?.id]?.delete(u.id);
     return interaction.editReply({embeds:[embed('🔒 אימות הוסר',`**${u.username}** הוסר מהמאומתים`,0xff6b35)]});
   }
+
+  // ══════════════════════════════════════════════════════
+  //  SETUP SERVER
+  // ══════════════════════════════════════════════════════
+  if (commandName === 'setup-server') {
+    if (!isAdmin(member)) return interaction.editReply({embeds:[errEmbed('נדרשות הרשאות Admin')]});
+    await interaction.editReply({embeds:[embed('🏗️ בונה שרת...','אנא המתן, זה יכול לקחת כמה שניות...',0xffa500)]});
+
+    try {
+      const everyone = guild?.roles?.everyone;
+
+      // ── יצירת תפקידים ──────────────────────────────────
+      const roleData = [
+        {name:'👑 Owner',      color:0xf1c40f, hoist:true, position:10},
+        {name:'⚡ Admin',      color:0xe74c3c, hoist:true, position:9},
+        {name:'🛡️ Moderator', color:0x3498db, hoist:true, position:8},
+        {name:'💎 VIP',        color:0x9b59b6, hoist:true, position:7},
+        {name:'🎫 Staff',      color:0xe67e22, hoist:true, position:6},
+        {name:'✅ Verified',   color:0x2ecc71, hoist:false, position:5},
+        {name:'👥 Member',     color:0x95a5a6, hoist:false, position:4},
+        {name:'🤖 Bot',        color:0x34495e, hoist:false, position:3},
+      ];
+      const createdRoles: Record<string,any> = {};
+      for (const r of roleData) {
+        try {
+          const role = await guild?.roles?.create({name:r.name,color:r.color,hoist:r.hoist,reason:'Server Setup by Yaniv Bot'});
+          createdRoles[r.name] = role;
+        } catch {}
+      }
+      const staffRole   = createdRoles['🎫 Staff'];
+      const verifiedRole= createdRoles['✅ Verified'];
+      const everyoneDeny= {ViewChannel:false};
+      const verifiedAllow={ViewChannel:true};
+
+      // ── יצירת קטגוריות וערוצים ──────────────────────────
+      // 📋 INFO (גלוי לכולם)
+      const catInfo = await guild?.channels?.create({name:'📋 ─── INFO ───',type:4});
+      await guild?.channels?.create({name:'📌│rules',        type:0, parent:catInfo?.id, topic:'חוקי השרת'});
+      await guild?.channels?.create({name:'📢│announcements',type:0, parent:catInfo?.id, topic:'הכרזות רשמיות'});
+      const welcomeCh = await guild?.channels?.create({name:'👋│welcome',    type:0, parent:catInfo?.id, topic:'ברוכים הבאים!'});
+      await guild?.channels?.create({name:'🗺️│server-guide', type:0, parent:catInfo?.id, topic:'מדריך השרת'});
+
+      // 🔐 VERIFY (גלוי לכולם, רק לקריאה)
+      const catVerify = await guild?.channels?.create({name:'🔐 ─── VERIFY ───',type:4,
+        permissionOverwrites:[
+          {id:everyone?.id,allow:['ViewChannel','ReadMessageHistory'],deny:['SendMessages']},
+          ...(verifiedRole?[{id:verifiedRole.id,allow:['ViewChannel']}]:[]),
+        ]
+      });
+      const verifyCh = await guild?.channels?.create({name:'✅│verify',type:0,parent:catVerify?.id,
+        permissionOverwrites:[
+          {id:everyone?.id,allow:['ViewChannel','ReadMessageHistory'],deny:['SendMessages']},
+        ]
+      });
+
+      // 💬 GENERAL (רק מאומתים)
+      const catGeneral = await guild?.channels?.create({name:'💬 ─── GENERAL ───',type:4,
+        permissionOverwrites:[
+          {id:everyone?.id,...everyoneDeny},
+          ...(verifiedRole?[{id:verifiedRole.id,...verifiedAllow}]:[]),
+        ]
+      });
+      await guild?.channels?.create({name:'💬│general',     type:0, parent:catGeneral?.id});
+      await guild?.channels?.create({name:'🖼️│media',       type:0, parent:catGeneral?.id, topic:'תמונות וסרטונים'});
+      await guild?.channels?.create({name:'😂│memes',       type:0, parent:catGeneral?.id});
+      await guild?.channels?.create({name:'🔗│links',       type:0, parent:catGeneral?.id});
+      await guild?.channels?.create({name:'🤖│bot-commands',type:0, parent:catGeneral?.id});
+
+      // 🎵 MUSIC
+      const catMusic = await guild?.channels?.create({name:'🎵 ─── MUSIC ───',type:4,
+        permissionOverwrites:[{id:everyone?.id,...everyoneDeny},...(verifiedRole?[{id:verifiedRole.id,...verifiedAllow}]:[])]
+      });
+      await guild?.channels?.create({name:'🎵│music-commands',type:0, parent:catMusic?.id});
+      await guild?.channels?.create({name:'🎙️ Music Room',   type:2, parent:catMusic?.id, userLimit:20});
+      await guild?.channels?.create({name:'🎙️ Chill Zone',   type:2, parent:catMusic?.id, userLimit:10});
+      await guild?.channels?.create({name:'🎙️ 24/7 Radio',   type:2, parent:catMusic?.id, userLimit:50});
+
+      // 🎮 GAMING
+      const catGaming = await guild?.channels?.create({name:'🎮 ─── GAMING ───',type:4,
+        permissionOverwrites:[{id:everyone?.id,...everyoneDeny},...(verifiedRole?[{id:verifiedRole.id,...verifiedAllow}]:[])]
+      });
+      await guild?.channels?.create({name:'🎮│gaming-chat',  type:0, parent:catGaming?.id});
+      await guild?.channels?.create({name:'🏆│achievements', type:0, parent:catGaming?.id});
+      await guild?.channels?.create({name:'📋│lfg',          type:0, parent:catGaming?.id, topic:'חפש שחקנים'});
+      await guild?.channels?.create({name:'🎙️ Gaming #1',   type:2, parent:catGaming?.id, userLimit:10});
+      await guild?.channels?.create({name:'🎙️ Gaming #2',   type:2, parent:catGaming?.id, userLimit:10});
+      await guild?.channels?.create({name:'🎙️ Squad',       type:2, parent:catGaming?.id, userLimit:6});
+
+      // 🛒 SHOP
+      const catShop = await guild?.channels?.create({name:'🛒 ─── SHOP ───',type:4,
+        permissionOverwrites:[{id:everyone?.id,...everyoneDeny},...(verifiedRole?[{id:verifiedRole.id,...verifiedAllow}]:[])]
+      });
+      await guild?.channels?.create({name:'🛒│shop',   type:0, parent:catShop?.id, topic:'השתמש ב /shop'});
+      await guild?.channels?.create({name:'💰│orders', type:0, parent:catShop?.id});
+      await guild?.channels?.create({name:'⭐│reviews',type:0, parent:catShop?.id});
+
+      // 🎫 TICKETS
+      const catTickets = await guild?.channels?.create({name:'🎫 ─── TICKETS ───',type:4,
+        permissionOverwrites:[
+          {id:everyone?.id,deny:['ViewChannel','SendMessages']},
+          ...(staffRole?[{id:staffRole.id,allow:['ViewChannel','SendMessages','ReadMessageHistory','ManageChannels']}]:[]),
+        ]
+      });
+      const ticketInfoCh = await guild?.channels?.create({name:'📋│open-ticket',type:0,parent:catTickets?.id,
+        permissionOverwrites:[
+          {id:everyone?.id,allow:['ViewChannel','ReadMessageHistory'],deny:['SendMessages']},
+          ...(verifiedRole?[{id:verifiedRole.id,allow:['ViewChannel','ReadMessageHistory']}]:[]),
+        ]
+      });
+      ticketConfig[guild?.id] = {categoryId: catTickets?.id, staffRoleId: staffRole?.id};
+
+      // 🔊 VOICE LOUNGE
+      const catVoice = await guild?.channels?.create({name:'🔊 ─── LOUNGE ───',type:4,
+        permissionOverwrites:[{id:everyone?.id,...everyoneDeny},...(verifiedRole?[{id:verifiedRole.id,...verifiedAllow}]:[])]
+      });
+      await guild?.channels?.create({name:'🎙️ Lobby',  type:2, parent:catVoice?.id, userLimit:0});
+      await guild?.channels?.create({name:'🎙️ Chill',  type:2, parent:catVoice?.id, userLimit:8});
+      await guild?.channels?.create({name:'📚 Study',  type:2, parent:catVoice?.id, userLimit:5});
+      await guild?.channels?.create({name:'😴 AFK',    type:2, parent:catVoice?.id, userLimit:99});
+
+      // 👑 STAFF (סגור)
+      const catStaff = await guild?.channels?.create({name:'👑 ─── STAFF ───',type:4,
+        permissionOverwrites:[
+          {id:everyone?.id,...everyoneDeny},
+          ...(staffRole?[{id:staffRole.id,allow:['ViewChannel','SendMessages','ReadMessageHistory']}]:[]),
+        ]
+      });
+      await guild?.channels?.create({name:'💬│staff-chat', type:0, parent:catStaff?.id});
+      await guild?.channels?.create({name:'📝│mod-logs',   type:0, parent:catStaff?.id});
+      await guild?.channels?.create({name:'🔨│action-log', type:0, parent:catStaff?.id});
+      await guild?.channels?.create({name:'🎙️ Staff VC',  type:2, parent:catStaff?.id, userLimit:10});
+
+      // ── שלח embed לverify ──────────────────────────────
+      if (verifyCh && verifiedRole) {
+        verifyConfig[guild?.id] = {roleId: verifiedRole.id, channelId: verifyCh.id};
+        if (!verifiedUsers[guild?.id]) verifiedUsers[guild?.id] = new Set();
+        const vEmbed = new EmbedBuilder()
+          .setTitle('🛡️ אימות חברים')
+          .setDescription('## ברוכים הבאים! 🎉\n\nכדי לקבל גישה לכל ערוצי השרת **לחץ על הכפתור למטה**.\n\nהאימות חד-פעמי ולוקח שנייה אחת ⚡')
+          .setColor(0x57F287)
+          .setThumbnail(guild?.iconURL({size:512})||'')
+          .addFields({name:'✅ מה תקבל?',value:'גישה לכל הערוצים 🔓',inline:true},{name:'⏱️ כמה זמן?',value:'שנייה! ⚡',inline:true})
+          .setFooter({text:'Bot by Yaniv 🚀'}).setTimestamp();
+        const vRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('verify_button').setLabel('✅ אמת אותי!').setStyle(ButtonStyle.Success).setEmoji('🛡️')
+        );
+        await verifyCh.send({embeds:[vEmbed], components:[vRow]});
+      }
+
+      // ── שלח embed לtickets ─────────────────────────────
+      if (ticketInfoCh) {
+        const tEmbed = new EmbedBuilder()
+          .setTitle('🎫 מערכת טיקטים')
+          .setDescription('## צריך עזרה? פתח טיקט! 🎫\n\nהצוות שלנו כאן בשבילך.\nלחץ על הכפתור למטה כדי לפתוח טיקט פרטי.')
+          .setColor(0x5865f2)
+          .addFields(
+            {name:'⏱️ זמן תגובה',value:'עד 24 שעות',inline:true},
+            {name:'🔒 פרטיות',value:'כל טיקט פרטי',inline:true},
+            {name:'📋 קטגוריות',value:'תמיכה / דיווח / שאלות / אחר',inline:false},
+          )
+          .setFooter({text:'Bot by Yaniv 🚀'}).setTimestamp();
+        const tRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('ticket_open').setLabel('🎫 פתח טיקט').setStyle(ButtonStyle.Primary).setEmoji('📩'),
+          new ButtonBuilder().setCustomId('ticket_report').setLabel('🚨 דווח').setStyle(ButtonStyle.Danger).setEmoji('⚠️'),
+          new ButtonBuilder().setCustomId('ticket_question').setLabel('❓ שאלה').setStyle(ButtonStyle.Secondary).setEmoji('💬'),
+        );
+        await ticketInfoCh.send({embeds:[tEmbed], components:[tRow]});
+      }
+
+      // ── welcome embed ──────────────────────────────────
+      if (welcomeCh) {
+        const wEmbed = new EmbedBuilder()
+          .setTitle(`🎉 ברוכים הבאים ל-${guild?.name}!`)
+          .setDescription('אנחנו שמחים שהצטרפת אלינו!\n\n📋 קרא את החוקים ב **#📌│rules**\n✅ אמת את עצמך ב **#✅│verify**\n💬 התחל לשוחח ב **#💬│general**\n🎫 צריך עזרה? פתח **#📋│open-ticket**')
+          .setColor(0xffd700)
+          .setThumbnail(guild?.iconURL({size:512})||'')
+          .setImage('https://i.imgur.com/your-banner.png')
+          .setFooter({text:'Bot by Yaniv 🚀'}).setTimestamp();
+        await welcomeCh.send({embeds:[wEmbed]});
+      }
+
+      return interaction.editReply({embeds:[new EmbedBuilder()
+        .setTitle('✅ השרת הוכן בהצלחה!')
+        .setColor(0x57F287)
+        .setDescription('🏗️ כל הערוצים, הקטגוריות והתפקידים נוצרו!')
+        .addFields(
+          {name:'🎭 תפקידים שנוצרו',value:'👑 Owner • ⚡ Admin • 🛡️ Moderator • 💎 VIP • 🎫 Staff • ✅ Verified • 👥 Member',inline:false},
+          {name:'📁 קטגוריות',value:'📋 INFO • 🔐 VERIFY • 💬 GENERAL • 🎵 MUSIC • 🎮 GAMING • 🛒 SHOP • 🎫 TICKETS • 🔊 LOUNGE • 👑 STAFF',inline:false},
+          {name:'⚡ מה הבא?',value:'1. תן לעצמך תפקיד **👑 Owner**\n2. הסתר את הקטגוריה הישנה\n3. תן לבוט הרשאות **Administrator**',inline:false},
+        )
+        .setFooter({text:'Bot by Yaniv 🚀'}).setTimestamp()
+      ]});
+    } catch(e:any) {
+      return interaction.editReply({embeds:[errEmbed(`שגיאה בבניית השרת: ${e.message?.slice(0,200)}`)]});
+    }
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  TICKETS
+  // ══════════════════════════════════════════════════════
+  if (commandName === 'setup-tickets') {
+    if (!isAdmin(member)) return interaction.editReply({embeds:[errEmbed('נדרשות הרשאות Admin')]});
+    let ticketCh = interaction.options.getChannel('channel');
+    if (!ticketCh) {
+      const cat = await guild?.channels?.create({name:'🎫 ─── TICKETS ───',type:4});
+      ticketCh = await guild?.channels?.create({name:'📋│open-ticket',type:0,parent:cat?.id,
+        permissionOverwrites:[{id:guild?.roles?.everyone?.id,allow:['ViewChannel','ReadMessageHistory'],deny:['SendMessages']}]
+      });
+      ticketConfig[guild?.id] = {categoryId:cat?.id};
+    }
+    const tEmbed = new EmbedBuilder()
+      .setTitle('🎫 מערכת טיקטים')
+      .setDescription('## צריך עזרה? פתח טיקט! 🎫\n\nלחץ על אחד הכפתורים למטה לפתיחת טיקט פרטי.')
+      .setColor(0x5865f2)
+      .addFields(
+        {name:'⏱️ זמן תגובה',value:'עד 24 שעות',inline:true},
+        {name:'🔒 פרטיות',value:'כל טיקט פרטי',inline:true},
+      )
+      .setFooter({text:'Bot by Yaniv 🚀'}).setTimestamp();
+    const tRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('ticket_open').setLabel('🎫 תמיכה').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('ticket_report').setLabel('🚨 דיווח').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('ticket_question').setLabel('❓ שאלה').setStyle(ButtonStyle.Secondary),
+    );
+    await ticketCh?.send({embeds:[tEmbed],components:[tRow]});
+    return interaction.editReply({embeds:[embed('✅ מערכת טיקטים הוגדרה!',`טיקטים נפתחים ב <#${ticketCh?.id}>`,0x00ff00)]});
+  }
+
+  if (commandName === 'close-ticket') {
+    if (!channel?.name?.startsWith('ticket-') && !channel?.name?.startsWith('🎫')) {
+      return interaction.editReply({embeds:[errEmbed('פקודה זו עובדת רק בתוך טיקט')]});
+    }
+    const closeEmbed = embed('🔒 הטיקט נסגר',`נסגר על ידי **${user.username}**\nהערוץ ימחק תוך 5 שניות...`,0xff6b35);
+    await interaction.editReply({embeds:[closeEmbed]});
+    setTimeout(()=>channel?.delete('Ticket closed').catch(()=>{}),5000);
+  }
+
+  if (commandName === 'add-ticket') {
+    if (!channel?.name?.startsWith('ticket-') && !channel?.name?.startsWith('🎫')) {
+      return interaction.editReply({embeds:[errEmbed('פקודה זו עובדת רק בתוך טיקט')]});
+    }
+    const u = interaction.options.getUser('user');
+    await channel?.permissionOverwrites?.edit(u.id,{ViewChannel:true,SendMessages:true,ReadMessageHistory:true});
+    return interaction.editReply({embeds:[embed('✅ נוסף לטיקט',`<@${u.id}> נוסף לטיקט`,0x00ff00)]});
+  }
+
+  if (commandName === 'ticket-rename') {
+    if (!isMod(member)) return interaction.editReply({embeds:[errEmbed('נדרשות הרשאות מוד')]});
+    const name = interaction.options.getString('name');
+    await channel?.setName(`🎫-${name}`);
+    return interaction.editReply({embeds:[embed('✅ שם שונה',`הטיקט שונה ל-**🎫-${name}**`,0x00ff00)]});
+  }
 });
 
-// ─── Button interactions (Verify) ─────────────────────────────────────────────
+// ─── Button interactions (Verify + Tickets) ───────────────────────────────────
 client.on('interactionCreate', async (interaction: any) => {
   if (!interaction.isButton()) return;
-  if (interaction.customId === 'verify_button') {
-    const guildId = interaction.guild?.id;
+  const {guild, user, customId} = interaction;
+
+  // ── VERIFY ──────────────────────────────────────────
+  if (customId === 'verify_button') {
+    const guildId = guild?.id;
     const cfg = verifyConfig[guildId];
     if (!cfg) return interaction.reply({content:'❌ מערכת האימות לא מוגדרת. פנה למנהל.',ephemeral:true});
-
     const member = interaction.member;
     if (member?.roles?.cache?.has(cfg.roleId)) {
       return interaction.reply({content:'✅ אתה כבר מאומת! יש לך גישה מלאה לשרת.',ephemeral:true});
     }
-
     try {
       await member?.roles?.add(cfg.roleId);
       if (!verifiedUsers[guildId]) verifiedUsers[guildId] = new Set();
-      verifiedUsers[guildId].add(interaction.user.id);
-
+      verifiedUsers[guildId].add(user.id);
       return interaction.reply({
         embeds:[new EmbedBuilder()
           .setTitle('✅ אומת בהצלחה!')
-          .setDescription(`ברוך הבא **${interaction.user.username}**! 🎉\nקיבלת גישה מלאה לשרת!`)
+          .setDescription(`ברוך הבא **${user.username}**! 🎉\nקיבלת גישה מלאה לשרת!`)
           .setColor(0x57F287)
-          .setThumbnail(interaction.user.displayAvatarURL({size:256}))
-          .setFooter({text:'Bot by Yaniv 🚀'})
-          .setTimestamp()
+          .setThumbnail(user.displayAvatarURL({size:256}))
+          .setFooter({text:'Bot by Yaniv 🚀'}).setTimestamp()
         ],
         ephemeral:true
       });
     } catch(e:any) {
       return interaction.reply({content:`❌ שגיאה: ${e.message}`,ephemeral:true});
     }
+  }
+
+  // ── TICKETS ─────────────────────────────────────────
+  if (['ticket_open','ticket_report','ticket_question'].includes(customId)) {
+    const guildId = guild?.id;
+    const cfg = ticketConfig[guildId];
+    if (!ticketCounter[guildId]) ticketCounter[guildId] = 0;
+    ticketCounter[guildId]++;
+    const num = String(ticketCounter[guildId]).padStart(4,'0');
+    const typeEmoji = customId==='ticket_report'?'🚨':customId==='ticket_question'?'❓':'🎫';
+    const typeName  = customId==='ticket_report'?'דיווח':customId==='ticket_question'?'שאלה':'תמיכה';
+
+    try {
+      const ticketChannel = await guild?.channels?.create({
+        name: `${typeEmoji}ticket-${num}`,
+        type: 0,
+        parent: cfg?.categoryId||undefined,
+        topic: `טיקט ${typeName} של ${user.username} | #${num}`,
+        permissionOverwrites: [
+          {id: guild?.roles?.everyone?.id, deny:['ViewChannel']},
+          {id: user.id, allow:['ViewChannel','SendMessages','ReadMessageHistory','AttachFiles']},
+          ...(cfg?.staffRoleId?[{id:cfg.staffRoleId, allow:['ViewChannel','SendMessages','ReadMessageHistory','ManageChannels']}]:[]),
+          {id: guild?.members?.me?.id, allow:['ViewChannel','SendMessages','ReadMessageHistory','ManageChannels']},
+        ],
+      });
+
+      const tEmbed = new EmbedBuilder()
+        .setTitle(`${typeEmoji} טיקט ${typeName} #${num}`)
+        .setDescription(
+          `שלום <@${user.id}>! 👋\n\nהצוות שלנו יחזור אליך בהקדם.\n**אנא תאר את הבעיה/השאלה שלך**\n\nלסגירת הטיקט לחץ על הכפתור למטה.`
+        )
+        .setColor(customId==='ticket_report'?0xe74c3c:customId==='ticket_question'?0x95a5a6:0x5865f2)
+        .addFields(
+          {name:'👤 פתח על ידי',value:`<@${user.id}>`,inline:true},
+          {name:'📋 סוג',value:typeName,inline:true},
+          {name:'🔢 מספר',value:`#${num}`,inline:true},
+        )
+        .setFooter({text:'Bot by Yaniv 🚀'}).setTimestamp();
+
+      const closeRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('ticket_close').setLabel('🔒 סגור טיקט').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('ticket_claim').setLabel('✋ קח טיקט').setStyle(ButtonStyle.Success),
+      );
+
+      await ticketChannel?.send({content:`<@${user.id}>${cfg?.staffRoleId?` <@&${cfg.staffRoleId}>`:''}`});
+      await ticketChannel?.send({embeds:[tEmbed], components:[closeRow]});
+
+      return interaction.reply({content:`✅ הטיקט שלך נפתח! <#${ticketChannel?.id}>`, ephemeral:true});
+    } catch(e:any) {
+      return interaction.reply({content:`❌ שגיאה: ${e.message}`,ephemeral:true});
+    }
+  }
+
+  if (customId === 'ticket_close') {
+    const closeEmbed = new EmbedBuilder()
+      .setTitle('🔒 הטיקט נסגר')
+      .setDescription(`נסגר על ידי **${user.username}**\nהערוץ ימחק תוך 5 שניות...`)
+      .setColor(0xff6b35).setTimestamp();
+    await interaction.reply({embeds:[closeEmbed]});
+    setTimeout(()=>interaction.channel?.delete('Ticket closed').catch(()=>{}),5000);
+  }
+
+  if (customId === 'ticket_claim') {
+    const member = interaction.member;
+    await interaction.channel?.permissionOverwrites?.edit(user.id,{ViewChannel:true,SendMessages:true,ReadMessageHistory:true,ManageChannels:true});
+    return interaction.reply({embeds:[new EmbedBuilder().setTitle('✋ טיקט נלקח').setDescription(`<@${user.id}> לקח את הטיקט הזה`).setColor(0x57F287)], ephemeral:false});
   }
 });
 
