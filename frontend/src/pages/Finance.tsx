@@ -3,7 +3,8 @@ import {
   Wallet, Plus, Trash2, Edit2, Check, X, ChevronDown, ChevronUp,
   CreditCard, Building2, Globe, DollarSign, Landmark, Eye, EyeOff,
   ArrowUpCircle, ArrowDownCircle, List, ArrowLeft, TrendingUp, TrendingDown,
-  ArrowRightLeft, Search, Download, PieChart as PieIcon, BarChart2
+  ArrowRightLeft, Search, Download, PieChart as PieIcon, BarChart2,
+  Target, RefreshCw, Bell, AlertTriangle, Calendar
 } from 'lucide-react';
 import {
   PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Legend
@@ -35,6 +36,28 @@ interface Account {
   details: Record<string, string>;
   color: string;
   createdAt: string;
+}
+
+interface Budget {
+  id: string;
+  category: string;
+  amount: number;
+  currency: string;
+  month: string; // YYYY-MM or 'monthly' for recurring
+}
+
+type RecurFreq = 'weekly' | 'monthly' | 'yearly';
+
+interface Recurring {
+  id: string;
+  name: string;
+  amount: number;
+  currency: string;
+  category: string;
+  freq: RecurFreq;
+  nextDate: string;
+  accountId: string;
+  active: boolean;
 }
 
 /* ─────────────── Constants ─────────────── */
@@ -116,6 +139,279 @@ function loadAccounts(): Account[] {
 }
 function loadTxs(): Transaction[] {
   try { return JSON.parse(localStorage.getItem('finance_txs') ?? '[]'); } catch { return []; }
+}
+function loadBudgets(): Budget[] {
+  try { return JSON.parse(localStorage.getItem('finance_budgets') ?? '[]'); } catch { return []; }
+}
+function loadRecurring(): Recurring[] {
+  try { return JSON.parse(localStorage.getItem('finance_recurring') ?? '[]'); } catch { return []; }
+}
+
+function thisMonth() { return new Date().toISOString().slice(0, 7); }
+function addMonths(date: string, n: number) {
+  const d = new Date(date + '-01');
+  d.setMonth(d.getMonth() + n);
+  return d.toISOString().slice(0, 10);
+}
+function nextOccurrence(from: string, freq: RecurFreq): string {
+  const d = new Date(from);
+  if (freq === 'weekly') d.setDate(d.getDate() + 7);
+  else if (freq === 'monthly') d.setMonth(d.getMonth() + 1);
+  else d.setFullYear(d.getFullYear() + 1);
+  return d.toISOString().slice(0, 10);
+}
+function daysUntil(dateStr: string) {
+  const diff = new Date(dateStr).getTime() - Date.now();
+  return Math.ceil(diff / (1000 * 60 * 60 * 24));
+}
+
+const FREQ_LABELS: Record<RecurFreq, string> = { weekly: 'שבועי', monthly: 'חודשי', yearly: 'שנתי' };
+
+/* ─────────────── Budget panel ─────────────── */
+
+function BudgetPanel({
+  txs, budgets, onSave, onDelete,
+}: {
+  txs: Transaction[];
+  budgets: Budget[];
+  onSave: (b: Omit<Budget, 'id'>) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [cat, setCat] = useState(EXPENSE_CATS[0]);
+  const [amount, setAmount] = useState('');
+  const [currency, setCurrency] = useState('ILS');
+  const month = thisMonth();
+
+  const monthBudgets = budgets.filter(b => b.month === month || b.month === 'monthly');
+
+  const spent = (category: string, cur: string) =>
+    txs.filter(t => t.type === 'expense' && t.category === category && t.date.startsWith(month))
+       .reduce((s, t) => s + t.amount, 0);
+
+  const submit = () => {
+    const n = parseFloat(amount);
+    if (!n) return;
+    onSave({ category: cat, amount: n, currency, month });
+    setAdding(false);
+    setAmount('');
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-semibold text-sm flex items-center gap-1.5">
+          <Target size={15} className="text-etsy-orange" /> תקציב חודשי — {month.slice(5)}/{month.slice(2,4)}
+        </h2>
+        <button onClick={() => setAdding(!adding)}
+          className="text-xs text-etsy-orange font-medium flex items-center gap-1">
+          <Plus size={13} /> הוסף
+        </button>
+      </div>
+
+      {adding && (
+        <div className="card p-3 mb-3 space-y-2">
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="label text-xs">קטגוריה</label>
+              <select className="input text-sm" value={cat} onChange={e => setCat(e.target.value)}>
+                {EXPENSE_CATS.map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="w-24">
+              <label className="label text-xs">מטבע</label>
+              <select className="input text-sm" value={currency} onChange={e => setCurrency(e.target.value)}>
+                {['ILS','USD','EUR'].map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="label text-xs">תקציב ({CURRENCY_SYMBOLS[currency] ?? currency})</label>
+            <input className="input" type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0" />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={submit} className="btn-primary flex-1 py-1.5 text-sm flex items-center justify-center gap-1"><Check size={14} /> שמור</button>
+            <button onClick={() => setAdding(false)} className="btn-secondary py-1.5 text-sm flex items-center gap-1"><X size={14} /> ביטול</button>
+          </div>
+        </div>
+      )}
+
+      {monthBudgets.length === 0 && !adding && (
+        <p className="text-center text-etsy-gray text-xs py-4">לא הוגדרו תקציבים לחודש זה</p>
+      )}
+
+      {monthBudgets.map(b => {
+        const sym = CURRENCY_SYMBOLS[b.currency] ?? b.currency;
+        const s = spent(b.category, b.currency);
+        const pct = Math.min((s / b.amount) * 100, 100);
+        const over = s > b.amount;
+        return (
+          <div key={b.id} className="card p-3 mb-2">
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-1.5">
+                {over && <AlertTriangle size={13} className="text-red-500" />}
+                <span className="text-sm font-medium">{b.category}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-medium ${over ? 'text-red-500' : 'text-etsy-gray'}`}>
+                  {sym}{s.toLocaleString()} / {sym}{b.amount.toLocaleString()}
+                </span>
+                <button onClick={() => onDelete(b.id)} className="text-etsy-gray hover:text-red-400">
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            </div>
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div className={`h-full rounded-full transition-all ${over ? 'bg-red-500' : pct > 80 ? 'bg-amber-400' : 'bg-green-500'}`}
+                style={{ width: `${pct}%` }} />
+            </div>
+            <p className="text-xs text-etsy-gray mt-1">{Math.round(pct)}% נוצל{over ? ' — חרגת!' : ''}</p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─────────────── Recurring panel ─────────────── */
+
+function RecurringPanel({
+  recurring, accounts, onSave, onDelete, onPayNow,
+}: {
+  recurring: Recurring[];
+  accounts: Account[];
+  onSave: (r: Omit<Recurring, 'id'>) => void;
+  onDelete: (id: string) => void;
+  onPayNow: (r: Recurring) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({
+    name: '', amount: '', currency: 'ILS', category: EXPENSE_CATS[0],
+    freq: 'monthly' as RecurFreq, nextDate: new Date().toISOString().slice(0, 10),
+    accountId: accounts[0]?.id ?? '',
+  });
+
+  const submit = () => {
+    if (!form.name.trim() || !parseFloat(form.amount)) return;
+    onSave({ ...form, amount: parseFloat(form.amount), active: true });
+    setAdding(false);
+    setForm(f => ({ ...f, name: '', amount: '' }));
+  };
+
+  const sorted = [...recurring].sort((a, b) => a.nextDate.localeCompare(b.nextDate));
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-semibold text-sm flex items-center gap-1.5">
+          <RefreshCw size={15} className="text-etsy-orange" /> תשלומים קבועים
+        </h2>
+        <button onClick={() => setAdding(!adding)}
+          className="text-xs text-etsy-orange font-medium flex items-center gap-1">
+          <Plus size={13} /> הוסף
+        </button>
+      </div>
+
+      {adding && (
+        <div className="card p-3 mb-3 space-y-2">
+          <div>
+            <label className="label text-xs">שם</label>
+            <input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="נטפליקס, שכר דירה..." />
+          </div>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="label text-xs">סכום</label>
+              <input className="input" type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="0" />
+            </div>
+            <div className="w-20">
+              <label className="label text-xs">מטבע</label>
+              <select className="input text-sm" value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}>
+                {['ILS','USD','EUR'].map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="label text-xs">תדירות</label>
+              <select className="input text-sm" value={form.freq} onChange={e => setForm(f => ({ ...f, freq: e.target.value as RecurFreq }))}>
+                <option value="weekly">שבועי</option>
+                <option value="monthly">חודשי</option>
+                <option value="yearly">שנתי</option>
+              </select>
+            </div>
+            <div className="flex-1">
+              <label className="label text-xs">תשלום הבא</label>
+              <input className="input text-sm" type="date" value={form.nextDate} onChange={e => setForm(f => ({ ...f, nextDate: e.target.value }))} />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="label text-xs">קטגוריה</label>
+              <select className="input text-sm" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
+                {EXPENSE_CATS.map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="flex-1">
+              <label className="label text-xs">חשבון</label>
+              <select className="input text-sm" value={form.accountId} onChange={e => setForm(f => ({ ...f, accountId: e.target.value }))}>
+                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={submit} className="btn-primary flex-1 py-1.5 text-sm flex items-center justify-center gap-1"><Check size={14} /> שמור</button>
+            <button onClick={() => setAdding(false)} className="btn-secondary py-1.5 text-sm flex items-center gap-1"><X size={14} /> ביטול</button>
+          </div>
+        </div>
+      )}
+
+      {sorted.length === 0 && !adding && (
+        <p className="text-center text-etsy-gray text-xs py-4">אין תשלומים קבועים</p>
+      )}
+
+      {sorted.map(r => {
+        const sym = CURRENCY_SYMBOLS[r.currency] ?? r.currency;
+        const days = daysUntil(r.nextDate);
+        const urgent = days <= 3;
+        const acc = accounts.find(a => a.id === r.accountId);
+        return (
+          <div key={r.id} className={`card p-3 mb-2 border-r-4 ${urgent ? 'border-r-red-400' : 'border-r-etsy-border'}`}>
+            <div className="flex items-center gap-2">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${urgent ? 'bg-red-100' : 'bg-orange-50'}`}>
+                {urgent ? <Bell size={15} className="text-red-500" /> : <RefreshCw size={15} className="text-etsy-orange" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{r.name}</p>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="badge-gray">{FREQ_LABELS[r.freq]}</span>
+                  <span className="text-xs text-etsy-gray flex items-center gap-0.5">
+                    <Calendar size={10} /> {fmtDate(r.nextDate)}
+                  </span>
+                  {acc && <span className="text-xs text-etsy-gray truncate">{acc.name}</span>}
+                </div>
+              </div>
+              <div className="text-left flex-shrink-0">
+                <p className="font-bold text-sm text-red-500">-{sym}{r.amount.toLocaleString()}</p>
+                <p className={`text-xs ${urgent ? 'text-red-500 font-medium' : 'text-etsy-gray'}`}>
+                  {days < 0 ? 'עבר!' : days === 0 ? 'היום!' : `בעוד ${days}י׳`}
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-1.5 mt-2">
+              <button onClick={() => onPayNow(r)}
+                className="flex-1 py-1 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg flex items-center justify-center gap-1">
+                <Check size={11} /> שלם עכשיו
+              </button>
+              <button onClick={() => onDelete(r.id)}
+                className="px-2 py-1 text-xs text-red-400 border border-etsy-border rounded-lg hover:bg-red-50">
+                <Trash2 size={12} />
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 /* ─────────────── Transfer form ─────────────── */
@@ -703,18 +999,25 @@ function AccountForm({ initial, onSave, onCancel }: {
 
 /* ─────────────── Main page ─────────────── */
 
+type MainTab = 'accounts' | 'budget' | 'recurring';
+
 export default function Finance() {
   const toast = useToast();
   const [accounts, setAccounts] = useState<Account[]>(loadAccounts);
   const [txs, setTxs] = useState<Transaction[]>(loadTxs);
+  const [budgets, setBudgets] = useState<Budget[]>(loadBudgets);
+  const [recurring, setRecurring] = useState<Recurring[]>(loadRecurring);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Account | null>(null);
   const [detail, setDetail] = useState<Account | null>(null);
   const [filter, setFilter] = useState<AccountType | 'all'>('all');
   const [showTransfer, setShowTransfer] = useState(false);
+  const [tab, setTab] = useState<MainTab>('accounts');
 
   useEffect(() => { localStorage.setItem('finance_accounts', JSON.stringify(accounts)); }, [accounts]);
   useEffect(() => { localStorage.setItem('finance_txs', JSON.stringify(txs)); }, [txs]);
+  useEffect(() => { localStorage.setItem('finance_budgets', JSON.stringify(budgets)); }, [budgets]);
+  useEffect(() => { localStorage.setItem('finance_recurring', JSON.stringify(recurring)); }, [recurring]);
 
   const effectiveBalance = (acc: Account) => {
     const delta = txs.filter(t => t.accountId === acc.id)
@@ -753,6 +1056,34 @@ export default function Finance() {
     toast.success('תנועה נמחקה');
   };
 
+  const saveBudget = (b: Omit<Budget, 'id'>) => {
+    setBudgets(prev => [...prev, { ...b, id: genId() }]);
+    toast.success('תקציב נשמר');
+  };
+  const deleteBudget = (id: string) => setBudgets(prev => prev.filter(b => b.id !== id));
+
+  const saveRecurring = (r: Omit<Recurring, 'id'>) => {
+    setRecurring(prev => [...prev, { ...r, id: genId() }]);
+    toast.success('תשלום קבוע נוסף');
+  };
+  const deleteRecurring = (id: string) => setRecurring(prev => prev.filter(r => r.id !== id));
+
+  const payNow = (r: Recurring) => {
+    const tx: Omit<Transaction, 'id'> = {
+      accountId: r.accountId, type: 'expense', amount: r.amount,
+      note: r.name, category: r.category, date: new Date().toISOString().slice(0, 10),
+    };
+    addTxs([tx]);
+    setRecurring(prev => prev.map(x => x.id === r.id
+      ? { ...x, nextDate: nextOccurrence(r.nextDate, r.freq) }
+      : x
+    ));
+    toast.success(`${r.name} שולם ✓`);
+  };
+
+  /* count overdue/urgent recurring */
+  const urgentCount = recurring.filter(r => daysUntil(r.nextDate) <= 3).length;
+
   if (detail) {
     const live = { ...detail, balance: effectiveBalance(detail) };
     return (
@@ -778,19 +1109,40 @@ export default function Finance() {
       <div className="flex items-center justify-between mb-4 pt-2">
         <h1 className="text-xl font-bold">ניהול כסף</h1>
         <div className="flex gap-2">
-          {accounts.length >= 2 && !showForm && !editing && (
+          {tab === 'accounts' && accounts.length >= 2 && !showForm && !editing && (
             <button onClick={() => setShowTransfer(!showTransfer)}
               className="btn-secondary flex items-center gap-1.5 py-2 px-3 text-sm">
               <ArrowRightLeft size={15} /> העבר
             </button>
           )}
-          {!showForm && !editing && (
+          {tab === 'accounts' && !showForm && !editing && (
             <button onClick={() => setShowForm(true)}
               className="btn-primary flex items-center gap-2 py-2 px-3 text-sm">
               <Plus size={16} /> הוסף
             </button>
           )}
         </div>
+      </div>
+
+      {/* Tab bar */}
+      <div className="flex rounded-xl overflow-hidden border border-etsy-border mb-4 bg-white">
+        {([
+          { key: 'accounts', label: 'חשבונות', icon: <Wallet size={14} /> },
+          { key: 'budget',   label: 'תקציב',   icon: <Target size={14} /> },
+          { key: 'recurring', label: 'קבועים', icon: <RefreshCw size={14} />, badge: urgentCount },
+        ] as { key: MainTab; label: string; icon: React.ReactNode; badge?: number }[]).map(t => (
+          <button key={t.key} onClick={() => setTab(t.key)}
+            className={`flex-1 py-2 text-xs font-medium flex items-center justify-center gap-1 relative transition-colors ${
+              tab === t.key ? 'bg-etsy-orange text-white' : 'text-etsy-gray'
+            }`}>
+            {t.icon} {t.label}
+            {t.badge ? (
+              <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center">
+                {t.badge}
+              </span>
+            ) : null}
+          </button>
+        ))}
       </div>
 
       {/* Summary cards */}
@@ -839,25 +1191,50 @@ export default function Finance() {
         </div>
       )}
 
-      {filtered.length === 0 && !showForm && !editing && (
-        <div className="text-center py-16">
-          <Wallet size={48} className="mx-auto text-etsy-border mb-4" />
-          <p className="font-semibold text-etsy-gray mb-1">אין חשבונות עדיין</p>
-          <p className="text-sm text-etsy-gray">לחץ "הוסף" כדי להתחיל</p>
-        </div>
+      {/* Accounts tab */}
+      {tab === 'accounts' && (
+        <>
+          {filtered.length === 0 && !showForm && !editing && (
+            <div className="text-center py-16">
+              <Wallet size={48} className="mx-auto text-etsy-border mb-4" />
+              <p className="font-semibold text-etsy-gray mb-1">אין חשבונות עדיין</p>
+              <p className="text-sm text-etsy-gray">לחץ "הוסף" כדי להתחיל</p>
+            </div>
+          )}
+          {filtered.map(a =>
+            editing?.id === a.id ? null : (
+              <AccountCard
+                key={a.id}
+                account={{ ...a, balance: effectiveBalance(a) }}
+                txCount={txs.filter(t => t.accountId === a.id).length}
+                onEdit={acc => { setShowForm(false); setEditing(acc); }}
+                onDelete={removeAccount}
+                onOpen={setDetail}
+              />
+            )
+          )}
+        </>
       )}
 
-      {filtered.map(a =>
-        editing?.id === a.id ? null : (
-          <AccountCard
-            key={a.id}
-            account={{ ...a, balance: effectiveBalance(a) }}
-            txCount={txs.filter(t => t.accountId === a.id).length}
-            onEdit={acc => { setShowForm(false); setEditing(acc); }}
-            onDelete={removeAccount}
-            onOpen={setDetail}
-          />
-        )
+      {/* Budget tab */}
+      {tab === 'budget' && (
+        <BudgetPanel
+          txs={txs}
+          budgets={budgets}
+          onSave={saveBudget}
+          onDelete={deleteBudget}
+        />
+      )}
+
+      {/* Recurring tab */}
+      {tab === 'recurring' && (
+        <RecurringPanel
+          recurring={recurring}
+          accounts={accounts}
+          onSave={saveRecurring}
+          onDelete={deleteRecurring}
+          onPayNow={payNow}
+        />
       )}
     </div>
   );
