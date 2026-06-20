@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import Groq from 'groq-sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { searchListings } from '../services/etsy.js';
 
 const router = Router();
@@ -9,8 +9,8 @@ router.post('/generate', async (req, res) => {
     const { keyword, style, material, audience } = req.body;
     if (!keyword) return res.status(400).json({ error: 'keyword is required' });
 
-    if (!process.env.GROQ_API_KEY) {
-      return res.status(400).json({ error: 'GROQ_API_KEY לא מוגדר. הוסף אותו בהגדרות.' });
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(400).json({ error: 'GEMINI_API_KEY לא מוגדר. הוסף אותו בהגדרות.' });
     }
 
     let marketContext = '';
@@ -27,7 +27,8 @@ router.post('/generate', async (req, res) => {
       marketContext = `Market data: avg price $${avgPrice}, top tags: ${topTags.join(', ')}, sample titles: ${sampleTitles}`;
     } catch {}
 
-    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
     const prompt = `You are an expert Etsy SEO specialist. Generate a high-converting Etsy listing for the following product.
 
@@ -46,13 +47,8 @@ Respond in JSON format only:
   "seo_notes": ["tip1", "tip2", "tip3"]
 }`;
 
-    const message = await groq.chat.completions.create({
-      model: 'llama-3.1-8b-instant',
-      max_tokens: 1024,
-      messages: [{ role: 'user', content: prompt }],
-    });
-
-    const content = message.choices[0]?.message?.content || '';
+    const result = await model.generateContent(prompt);
+    const content = result.response.text() || '';
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('Failed to parse AI response');
 

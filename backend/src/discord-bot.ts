@@ -10,13 +10,13 @@ import { exec, execSync } from 'child_process';
 import { promisify } from 'util';
 import * as os from 'os';
 import * as fs from 'fs';
-import Groq from 'groq-sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const execAsync = promisify(exec);
 
 const TOKEN = process.env.DISCORD_BOT_TOKEN || '';
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '';
-const groq = new Groq({apiKey: process.env.GROQ_API_KEY||''});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY||'');
 
 if (!TOKEN || !CLIENT_ID) { console.error('❌ DISCORD_BOT_TOKEN or DISCORD_CLIENT_ID is not set'); process.exit(1); }
 
@@ -1014,8 +1014,8 @@ client.on('interactionCreate', async (interaction: any) => {
   //  AI COMMANDS
   // ══════════════════════════════════════════════════════
   if (['ask','chat','summarize','code','translate-ai'].includes(commandName)) {
-    if (!process.env.GROQ_API_KEY) {
-      return interaction.editReply({embeds:[errEmbed('GROQ_API_KEY לא מוגדר ב-Railway')]});
+    if (!process.env.GEMINI_API_KEY) {
+      return interaction.editReply({embeds:[errEmbed('GEMINI_API_KEY לא מוגדר ב-Railway')]});
     }
 
     let prompt = '';
@@ -1038,12 +1038,9 @@ client.on('interactionCreate', async (interaction: any) => {
     }
 
     try {
-      const completion = await groq.chat.completions.create({
-        model: 'llama-3.1-8b-instant',
-        max_tokens: 1024,
-        messages: [{role:'system',content:systemPrompt},{role:'user',content:prompt}],
-      });
-      const response = completion.choices[0]?.message?.content || 'שגיאה';
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      const completion = await model.generateContent(`${systemPrompt}\n\n${prompt}`);
+      const response = completion.response.text() || 'שגיאה';
 
       const cmdEmoji = commandName==='code'?'💻':commandName==='summarize'?'📝':commandName==='translate-ai'?'🌐':'🤖';
       const e = new EmbedBuilder()
@@ -1443,20 +1440,14 @@ client.on('messageCreate', async (message: any) => {
   }
 
   // AI — ענה כשמזכירים את הבוט
-  if (message.mentions?.has(client.user) && process.env.GROQ_API_KEY) {
+  if (message.mentions?.has(client.user) && process.env.GEMINI_API_KEY) {
     const content = message.content.replace(/<@!?\d+>/g,'').trim();
     if (!content) return message.reply('שאל אותי משהו! 🤖').catch(()=>{});
     try {
       message.channel.sendTyping().catch(()=>{});
-      const completion = await groq.chat.completions.create({
-        model: 'llama-3.1-8b-instant',
-        max_tokens: 512,
-        messages: [
-          {role:'system', content:'אתה עוזר AI חכם בשם Yaniv Bot. ענה בעברית, היה קצר וידידותי.'},
-          {role:'user', content},
-        ],
-      });
-      const reply = completion.choices[0]?.message?.content || '...';
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      const completion = await model.generateContent(`אתה עוזר AI חכם בשם Yaniv Bot. ענה בעברית, היה קצר וידידותי.\n\n${content}`);
+      const reply = completion.response.text() || '...';
       message.reply(`🤖 **Yaniv AI:** ${reply.slice(0,1900)}`).catch(()=>{});
     } catch(e:any) {
       message.reply(`❌ שגיאת AI: ${e.message?.slice(0,100)}`).catch(()=>{});
