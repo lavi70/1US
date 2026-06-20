@@ -901,51 +901,93 @@ if (commandName === 'uptime') {
 
   if (commandName === 'stock') {
     const symbol = interaction.options.getString('symbol').toUpperCase();
-    try {
-      const finnhubKey = process.env.FINNHUB_KEY || '';
-      if (!finnhubKey) {
-        return interaction.editReply({embeds:[errEmbed(
-          'חסר FINNHUB_KEY ב-Railway!\n\n1. לך ל-**finnhub.io** → Sign up (חינמי)\n2. קבל API Key\n3. הוסף ב-Railway כ-`FINNHUB_KEY`'
-        )]});
-      }
+    const finnhubKey = process.env.FINNHUB_KEY || '';
+    if (!finnhubKey) return interaction.editReply({embeds:[errEmbed('חסר FINNHUB_KEY ב-Railway')]});
 
-      // Finnhub - free real-time stock data
-      const [quoteRes, profileRes] = await Promise.all([
+    const buildStockEmbed = async () => {
+      const [quoteRes, profileRes, newsRes, sentimentRes] = await Promise.allSettled([
         axios.get(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubKey}`),
         axios.get(`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${finnhubKey}`),
+        axios.get(`https://finnhub.io/api/v1/company-news?symbol=${symbol}&from=${new Date(Date.now()-86400000).toISOString().split('T')[0]}&to=${new Date().toISOString().split('T')[0]}&token=${finnhubKey}`),
+        axios.get(`https://finnhub.io/api/v1/news-sentiment?symbol=${symbol}&token=${finnhubKey}`),
       ]);
 
-      const q = quoteRes.data;
-      const p = profileRes.data;
-      if (!q?.c) return interaction.editReply({embeds:[errEmbed(`לא נמצאה מניה: ${symbol}`)]});
+      const q = quoteRes.status==='fulfilled' ? quoteRes.value.data : null;
+      const p = profileRes.status==='fulfilled' ? profileRes.value.data : {};
+      const news = newsRes.status==='fulfilled' ? newsRes.value.data?.slice(0,3) : [];
+      const sent = sentimentRes.status==='fulfilled' ? sentimentRes.value.data : null;
+
+      if (!q?.c) throw new Error(`לא נמצאה מניה: ${symbol}`);
 
       const price = q.c;
-      const change = q.d;
-      const changePct = q.dp?.toFixed(2);
+      const change = q.d || 0;
+      const changePct = Math.abs(q.dp || 0);
       const isUp = change >= 0;
-      const color = isUp ? 0x2ecc71 : 0xe74c3c;
-      const arrow = isUp ? '📈' : '📉';
+      const absPct = changePct.toFixed(2);
 
-      return interaction.editReply({embeds:[new EmbedBuilder()
-        .setTitle(`${arrow} ${symbol}${p?.name ? ` — ${p.name}` : ''}`)
+      // Color by magnitude
+      let color = 0x95a5a6; // gray = flat
+      if (isUp) {
+        color = changePct > 3 ? 0x00ff00 : changePct > 1 ? 0x2ecc71 : 0x27ae60;
+      } else {
+        color = changePct > 3 ? 0xff0000 : changePct > 1 ? 0xe74c3c : 0xc0392b;
+      }
+
+      // Signal
+      const signal = changePct > 3 ? (isUp ? '🚀 זינוק חזק!' : '💥 נפילה חדה!') :
+                     changePct > 1 ? (isUp ? '📈 עלייה' : '📉 ירידה') : '😐 יציב';
+
+      // 52W position bar
+      const rangePos = q.pc ? Math.min(100, Math.max(0, ((price - q.l) / (q.h - q.l || 1)) * 100)) : 50;
+      const barLen = 10;
+      const filled = Math.round(rangePos / 10);
+      const bar = '█'.repeat(filled) + '░'.repeat(barLen - filled);
+
+      // Sentiment
+      let sentimentText = 'N/A';
+      if (sent?.sentiment) {
+        const s = sent.sentiment;
+        const bull = (s.bullishPercent * 100).toFixed(0);
+        const bear = (s.bearishPercent * 100).toFixed(0);
+        sentimentText = `🐂 ${bull}% עולים | 🐻 ${bear}% יורדים`;
+      }
+
+      // Why moved - from news
+      let whyMoved = 'אין חדשות אחרונות';
+      if (news?.length) {
+        whyMoved = news.map((n:any) => `• ${n.headline?.slice(0,80)||''}`).join('\n');
+      }
+
+      const e = new EmbedBuilder()
+        .setTitle(`${isUp?'🟢':'🔴'} **${symbol}** ${signal}`)
         .setColor(color)
-        .setThumbnail(p?.logo || null)
+        .setDescription(`> **${p?.name||symbol}** | ${p?.exchange||''} | ${p?.finnhubIndustry||''}`)
+        .setThumbnail(p?.logo||null)
         .addFields(
-          {name:'💵 מחיר', value:`**$${price?.toFixed(2)}**`, inline:true},
-          {name:'📊 שינוי היום', value:`${isUp?'+':''}${change?.toFixed(2)} (${isUp?'+':''}${changePct}%)`, inline:true},
+          {name:'💵 מחיר נוכחי', value:`# $${price.toFixed(2)}`, inline:true},
+          {name:`${isUp?'📈':'📉'} שינוי היום`, value:`**${isUp?'+':''}${change.toFixed(2)}** (${isUp?'+':''}${absPct}%)`, inline:true},
+          {name:'📅 סגירה אתמול', value:`$${q.pc?.toFixed(2)||'N/A'}`, inline:true},
           {name:'🔓 פתיחה', value:`$${q.o?.toFixed(2)||'N/A'}`, inline:true},
           {name:'📉 שפל יומי', value:`$${q.l?.toFixed(2)||'N/A'}`, inline:true},
           {name:'📈 שיא יומי', value:`$${q.h?.toFixed(2)||'N/A'}`, inline:true},
-          {name:'📅 סגירה אתמול', value:`$${q.pc?.toFixed(2)||'N/A'}`, inline:true},
-          {name:'🏭 תעשייה', value:p?.finnhubIndustry||'N/A', inline:true},
-          {name:'🌍 מדינה', value:p?.country||'N/A', inline:true},
-          {name:'💱 בורסה', value:p?.exchange||'N/A', inline:true},
+          {name:'📊 מיקום בטווח היומי', value:`\`${bar}\` ${rangePos.toFixed(0)}%\n⬇️$${q.l?.toFixed(2)} ——— ⬆️$${q.h?.toFixed(2)}`, inline:false},
+          {name:'🧠 סנטימנט שוק', value:sentimentText, inline:false},
+          {name:'📰 למה זז? (חדשות אחרונות)', value:whyMoved.slice(0,500)||'אין חדשות', inline:false},
         )
-        .setFooter({text:'מקור: Finnhub | עדכון בזמן אמת'})
-        .setTimestamp()
-      ]});
+        .setFooter({text:`Finnhub • עדכון: ${new Date().toLocaleTimeString('he-IL')}`})
+        .setTimestamp();
+
+      return e;
+    };
+
+    try {
+      const stockEmbed = await buildStockEmbed();
+      const refreshBtn = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`stock_refresh_${symbol}`).setLabel('🔄 רענן').setStyle(ButtonStyle.Primary),
+      );
+      return interaction.editReply({embeds:[stockEmbed], components:[refreshBtn]});
     } catch(e:any) {
-      return interaction.editReply({embeds:[errEmbed(`שגיאה בטעינת מניה ${symbol}: ${e.message}`)]});
+      return interaction.editReply({embeds:[errEmbed(`שגיאה: ${e.message}`)]});
     }
   }
 
@@ -1656,6 +1698,57 @@ client.on('interactionCreate', async (interaction: any) => {
       return interaction.reply({content:`✅ הטיקט שלך נפתח! <#${ticketChannel?.id}>`, flags:64});
     } catch(e:any) {
       return interaction.reply({content:`❌ שגיאה: ${e.message}`,flags:64});
+    }
+  }
+
+  if (customId.startsWith('stock_refresh_')) {
+    const symbol = customId.replace('stock_refresh_', '');
+    await interaction.deferUpdate();
+    const finnhubKey = process.env.FINNHUB_KEY || '';
+    try {
+      const [quoteRes, newsRes, sentimentRes, profileRes] = await Promise.allSettled([
+        axios.get(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubKey}`),
+        axios.get(`https://finnhub.io/api/v1/company-news?symbol=${symbol}&from=${new Date(Date.now()-86400000).toISOString().split('T')[0]}&to=${new Date().toISOString().split('T')[0]}&token=${finnhubKey}`),
+        axios.get(`https://finnhub.io/api/v1/news-sentiment?symbol=${symbol}&token=${finnhubKey}`),
+        axios.get(`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${finnhubKey}`),
+      ]);
+      const q = quoteRes.status==='fulfilled' ? quoteRes.value.data : null;
+      const p = profileRes.status==='fulfilled' ? profileRes.value.data : {};
+      const news = newsRes.status==='fulfilled' ? newsRes.value.data?.slice(0,3) : [];
+      const sent = sentimentRes.status==='fulfilled' ? sentimentRes.value.data : null;
+      if (!q?.c) return interaction.editReply({content:'לא נמצאו נתונים'});
+
+      const price = q.c, change = q.d||0, changePct = Math.abs(q.dp||0);
+      const isUp = change >= 0;
+      let color = isUp ? (changePct>3?0x00ff00:0x2ecc71) : (changePct>3?0xff0000:0xe74c3c);
+      const signal = changePct>3?(isUp?'🚀 זינוק חזק!':'💥 נפילה חדה!'):changePct>1?(isUp?'📈 עלייה':'📉 ירידה'):'😐 יציב';
+      const rangePos = Math.min(100,Math.max(0,((price-q.l)/(q.h-q.l||1))*100));
+      const bar = '█'.repeat(Math.round(rangePos/10))+'░'.repeat(10-Math.round(rangePos/10));
+      const sentText = sent?.sentiment ? `🐂 ${(sent.sentiment.bullishPercent*100).toFixed(0)}% | 🐻 ${(sent.sentiment.bearishPercent*100).toFixed(0)}%` : 'N/A';
+      const whyMoved = news?.length ? news.map((n:any)=>`• ${n.headline?.slice(0,80)||''}`).join('\n') : 'אין חדשות';
+
+      const e = new EmbedBuilder()
+        .setTitle(`${isUp?'🟢':'🔴'} **${symbol}** ${signal}`)
+        .setColor(color)
+        .setDescription(`> **${p?.name||symbol}** | ${p?.exchange||''} | ${p?.finnhubIndustry||''}`)
+        .setThumbnail(p?.logo||null)
+        .addFields(
+          {name:'💵 מחיר', value:`# $${price.toFixed(2)}`, inline:true},
+          {name:`${isUp?'📈':'📉'} שינוי`, value:`**${isUp?'+':''}${change.toFixed(2)}** (${isUp?'+':''}${changePct.toFixed(2)}%)`, inline:true},
+          {name:'📅 אתמול', value:`$${q.pc?.toFixed(2)||'N/A'}`, inline:true},
+          {name:'📊 טווח יומי', value:`\`${bar}\` ${rangePos.toFixed(0)}%\n⬇️$${q.l?.toFixed(2)} ——— ⬆️$${q.h?.toFixed(2)}`, inline:false},
+          {name:'🧠 סנטימנט', value:sentText, inline:true},
+          {name:'📰 חדשות', value:whyMoved.slice(0,400), inline:false},
+        )
+        .setFooter({text:`עדכון: ${new Date().toLocaleTimeString('he-IL')}`})
+        .setTimestamp();
+
+      const refreshBtn = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`stock_refresh_${symbol}`).setLabel('🔄 רענן').setStyle(ButtonStyle.Primary),
+      );
+      return interaction.editReply({embeds:[e], components:[refreshBtn]});
+    } catch(e:any) {
+      return interaction.editReply({content:`שגיאה: ${e.message}`});
     }
   }
 
