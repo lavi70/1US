@@ -10,13 +10,19 @@ import { exec, execSync } from 'child_process';
 import { promisify } from 'util';
 import * as os from 'os';
 import * as fs from 'fs';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import axios from 'axios';
 
 const execAsync = promisify(exec);
 
 const TOKEN = process.env.DISCORD_BOT_TOKEN || '';
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '';
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY||'');
+
+async function geminiAsk(prompt: string): Promise<string> {
+  const key = process.env.GEMINI_API_KEY || '';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${key}`;
+  const res = await axios.post(url, { contents: [{ parts: [{ text: prompt }] }] });
+  return res.data?.candidates?.[0]?.content?.parts?.[0]?.text || 'אין תשובה';
+}
 
 if (!TOKEN || !CLIENT_ID) { console.error('❌ DISCORD_BOT_TOKEN or DISCORD_CLIENT_ID is not set'); process.exit(1); }
 
@@ -1038,9 +1044,7 @@ client.on('interactionCreate', async (interaction: any) => {
     }
 
     try {
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-      const completion = await model.generateContent(`${systemPrompt}\n\n${prompt}`);
-      const response = completion.response.text() || 'שגיאה';
+      const response = await geminiAsk(`${systemPrompt}\n\n${prompt}`);
 
       const cmdEmoji = commandName==='code'?'💻':commandName==='summarize'?'📝':commandName==='translate-ai'?'🌐':'🤖';
       const e = new EmbedBuilder()
@@ -1445,9 +1449,7 @@ client.on('messageCreate', async (message: any) => {
     if (!content) return message.reply('שאל אותי משהו! 🤖').catch(()=>{});
     try {
       message.channel.sendTyping().catch(()=>{});
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-      const completion = await model.generateContent(`אתה עוזר AI חכם בשם Yaniv Bot. ענה בעברית, היה קצר וידידותי.\n\n${content}`);
-      const reply = completion.response.text() || '...';
+      const reply = await geminiAsk(`אתה עוזר AI חכם בשם Yaniv Bot. ענה בעברית, היה קצר וידידותי.\n\n${content}`);
       message.reply(`🤖 **Yaniv AI:** ${reply.slice(0,1900)}`).catch(()=>{});
     } catch(e:any) {
       message.reply(`❌ שגיאת AI: ${e.message?.slice(0,100)}`).catch(()=>{});

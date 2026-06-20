@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import axios from 'axios';
 import { searchListings } from '../services/etsy.js';
 
 const router = Router();
@@ -27,9 +27,6 @@ router.post('/generate', async (req, res) => {
       marketContext = `Market data: avg price $${avgPrice}, top tags: ${topTags.join(', ')}, sample titles: ${sampleTitles}`;
     } catch {}
 
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-
     const prompt = `You are an expert Etsy SEO specialist. Generate a high-converting Etsy listing for the following product.
 
 Product: ${keyword}
@@ -47,8 +44,10 @@ Respond in JSON format only:
   "seo_notes": ["tip1", "tip2", "tip3"]
 }`;
 
-    const result = await model.generateContent(prompt);
-    const content = result.response.text() || '';
+    const key = process.env.GEMINI_API_KEY!;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${key}`;
+    const geminiRes = await axios.post(url, { contents: [{ parts: [{ text: prompt }] }] });
+    const content = geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('Failed to parse AI response');
 
