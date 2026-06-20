@@ -20,6 +20,9 @@ const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '';
 // Live stock tickers: messageId → { symbol, channelId, intervalId }
 const liveTickers: Map<string, { symbol: string; channelId: string; intervalId: any }> = new Map();
 
+// Portfolio: userId → [{symbol, shares, buyPrice}]
+const portfolios: Map<string, Array<{symbol:string; shares:number; buyPrice:number}>> = new Map();
+
 if (!TOKEN || !CLIENT_ID) { console.error('❌ DISCORD_BOT_TOKEN or DISCORD_CLIENT_ID is not set'); process.exit(1); }
 
 const client = new Client({
@@ -148,12 +151,15 @@ const commands = [
   new SlashCommandBuilder().setName('addrole').setDescription('הוסף תפקיד למשתמש').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)).addRoleOption(o=>o.setName('role').setDescription('תפקיד').setRequired(true)),
   new SlashCommandBuilder().setName('removerole').setDescription('הסר תפקיד ממשתמש').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)).addRoleOption(o=>o.setName('role').setDescription('תפקיד').setRequired(true)),
   new SlashCommandBuilder().setName('createrole').setDescription('יצירת תפקיד חדש').addStringOption(o=>o.setName('name').setDescription('שם התפקיד').setRequired(true)).addStringOption(o=>o.setName('color').setDescription('צבע hex').setRequired(false)),
-  new SlashCommandBuilder().setName('delrole').setDescription('מחיקת תפקיד').addRoleOption(o=>o.setName('role').setDescription('תפקיד').setRequired(true)),
+  new SlashCommandBuilder().setName('portfolio-add').setDescription('📊 הוסף מניה לתיק שלך').addStringOption(o=>o.setName('symbol').setDescription('סימול (AAPL, TSLA...)').setRequired(true)).addNumberOption(o=>o.setName('shares').setDescription('כמות מניות').setRequired(true)).addNumberOption(o=>o.setName('buyprice').setDescription('מחיר קנייה ($)').setRequired(true)),
+  new SlashCommandBuilder().setName('portfolio-view').setDescription('📊 צפה בתיק המניות שלך עם שווי נוכחי'),
+  new SlashCommandBuilder().setName('compare').setDescription('📊 השווה 2 מניות זו לצד זו').addStringOption(o=>o.setName('symbol1').setDescription('מניה ראשונה').setRequired(true)).addStringOption(o=>o.setName('symbol2').setDescription('מניה שנייה').setRequired(true)),
+  new SlashCommandBuilder().setName('market-summary').setDescription('🌍 סיכום שוק - S&P500, NASDAQ, DOW, VIX'),
+  new SlashCommandBuilder().setName('fear-greed').setDescription('😱 מדד פחד וחמדנות של השוק (Fear & Greed Index)'),
 
   // CHANNELS
   new SlashCommandBuilder().setName('createchannel').setDescription('יצירת ערוץ').addStringOption(o=>o.setName('name').setDescription('שם הערוץ').setRequired(true)).addStringOption(o=>o.setName('type').setDescription('text/voice').setRequired(false)),
   new SlashCommandBuilder().setName('delchannel').setDescription('מחיקת ערוץ').addChannelOption(o=>o.setName('channel').setDescription('ערוץ').setRequired(true)),
-  new SlashCommandBuilder().setName('renamechannel').setDescription('שינוי שם ערוץ').addStringOption(o=>o.setName('name').setDescription('שם חדש').setRequired(true)),
   new SlashCommandBuilder().setName('topic').setDescription('שינוי תיאור ערוץ').addStringOption(o=>o.setName('topic').setDescription('תיאור').setRequired(true)),
 
   // FUN
@@ -190,15 +196,12 @@ const commands = [
   // SERVER MANAGEMENT (SYSTEM)
   new SlashCommandBuilder().setName('status').setDescription('סטטוס השרת'),
   new SlashCommandBuilder().setName('sysinfo').setDescription('מידע מלא על המערכת'),
-  new SlashCommandBuilder().setName('ps').setDescription('תהליכים פעילים'),
-  new SlashCommandBuilder().setName('top').setDescription('תהליכים כבדים'),
   new SlashCommandBuilder().setName('df').setDescription('שימוש בדיסק'),
   new SlashCommandBuilder().setName('docker').setDescription('קונטיינרים'),
   new SlashCommandBuilder().setName('services').setDescription('שירותים פעילים'),
   new SlashCommandBuilder().setName('logs').setDescription('לוגי שירות').addStringOption(o=>o.setName('service').setDescription('שם').setRequired(true)),
   new SlashCommandBuilder().setName('restart').setDescription('הפעל מחדש שירות').addStringOption(o=>o.setName('service').setDescription('שם').setRequired(true)),
   new SlashCommandBuilder().setName('exec').setDescription('הרץ פקודה (Admin)').addStringOption(o=>o.setName('command').setDescription('הפקודה').setRequired(true)),
-  new SlashCommandBuilder().setName('kill').setDescription('הרוג תהליך').addIntegerOption(o=>o.setName('pid').setDescription('PID').setRequired(true)),
 
 
   // FINANCE & MARKET
@@ -1389,6 +1392,176 @@ if (commandName === 'uptime') {
       }
     }
     return interaction.editReply({embeds:[embed(stopped?'⏹️ Live ticker עצר':'❌ אין ticker פעיל', stopped?`עצרתי את ה-ticker של **${[...liveTickers.values()][0]?.symbol||''}** בערוץ זה`:'לא נמצא ticker פעיל בערוץ זה', stopped?0xff6b35:0xe74c3c)]});
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  PORTFOLIO
+  // ══════════════════════════════════════════════════════
+  if (commandName === 'portfolio-add') {
+    const symbol = interaction.options.getString('symbol').toUpperCase();
+    const shares = interaction.options.getNumber('shares');
+    const buyPrice = interaction.options.getNumber('buyprice');
+    const userId = interaction.user.id;
+    const portfolio = portfolios.get(userId) || [];
+    const existing = portfolio.find(p => p.symbol === symbol);
+    if (existing) {
+      const totalShares = existing.shares + shares;
+      existing.buyPrice = (existing.buyPrice * existing.shares + buyPrice * shares) / totalShares;
+      existing.shares = totalShares;
+    } else {
+      portfolio.push({ symbol, shares, buyPrice });
+    }
+    portfolios.set(userId, portfolio);
+    return interaction.editReply({embeds:[embed(`✅ נוסף לתיק`, `**${symbol}** — ${shares} מניות במחיר $${buyPrice.toFixed(2)}\nסה"כ ${portfolio.find(p=>p.symbol===symbol)!.shares} מניות ב-$${portfolio.find(p=>p.symbol===symbol)!.buyPrice.toFixed(2)} ממוצע`, 0x2ecc71)]});
+  }
+
+  if (commandName === 'portfolio-view') {
+    const userId = interaction.user.id;
+    const portfolio = portfolios.get(userId) || [];
+    if (!portfolio.length) return interaction.editReply({embeds:[errEmbed('התיק שלך ריק — הוסף מניות עם /portfolio-add')]});
+    const finnhubKey = process.env.FINNHUB_KEY || '';
+    let totalCost = 0, totalValue = 0;
+    const lines: string[] = [];
+    for (const item of portfolio) {
+      try {
+        const r = await axios.get(`https://finnhub.io/api/v1/quote?symbol=${item.symbol}&token=${finnhubKey}`);
+        const price = r.data.c || 0;
+        const cost = item.shares * item.buyPrice;
+        const value = item.shares * price;
+        const pnl = value - cost;
+        const pct = ((pnl / cost) * 100).toFixed(2);
+        const arrow = pnl >= 0 ? '🟢' : '🔴';
+        lines.push(`${arrow} **${item.symbol}** — ${item.shares} מניות | שווי: $${value.toFixed(2)} | רווח/הפסד: ${pnl>=0?'+':''}$${pnl.toFixed(2)} (${pct}%)`);
+        totalCost += cost;
+        totalValue += value;
+      } catch {
+        lines.push(`⚪ **${item.symbol}** — ${item.shares} מניות (לא ניתן לטעון מחיר)`);
+      }
+    }
+    const totalPnl = totalValue - totalCost;
+    const totalPct = ((totalPnl / totalCost) * 100).toFixed(2);
+    const e = new EmbedBuilder()
+      .setTitle(`📊 תיק המניות של ${interaction.user.username}`)
+      .setDescription(lines.join('\n'))
+      .addFields(
+        {name:'💰 עלות כוללת', value:`$${totalCost.toFixed(2)}`, inline:true},
+        {name:'📈 שווי נוכחי', value:`$${totalValue.toFixed(2)}`, inline:true},
+        {name:`${totalPnl>=0?'🟢':'🔴'} רווח/הפסד`, value:`${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)} (${totalPct}%)`, inline:true}
+      )
+      .setColor(totalPnl >= 0 ? 0x2ecc71 : 0xe74c3c)
+      .setTimestamp();
+    return interaction.editReply({embeds:[e]});
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  COMPARE STOCKS
+  // ══════════════════════════════════════════════════════
+  if (commandName === 'compare') {
+    const s1 = interaction.options.getString('symbol1').toUpperCase();
+    const s2 = interaction.options.getString('symbol2').toUpperCase();
+    const finnhubKey = process.env.FINNHUB_KEY || '';
+    if (!finnhubKey) return interaction.editReply({embeds:[errEmbed('חסר FINNHUB_KEY')]});
+    const fetchStock = async (s: string) => {
+      const [q, p] = await Promise.all([
+        axios.get(`https://finnhub.io/api/v1/quote?symbol=${s}&token=${finnhubKey}`),
+        axios.get(`https://finnhub.io/api/v1/stock/profile2?symbol=${s}&token=${finnhubKey}`)
+      ]);
+      return { ...q.data, ...p.data };
+    };
+    try {
+      const [d1, d2] = await Promise.all([fetchStock(s1), fetchStock(s2)]);
+      const row = (label: string, v1: string, v2: string) => ({name: label, value: `**${s1}:** ${v1}\n**${s2}:** ${v2}`, inline: true});
+      const chg1 = d1.dp || 0, chg2 = d2.dp || 0;
+      const winner = chg1 > chg2 ? s1 : s2;
+      const e = new EmbedBuilder()
+        .setTitle(`📊 השוואה: ${s1} vs ${s2}`)
+        .setDescription(`🏆 ביצועים טובים יותר היום: **${winner}**`)
+        .addFields(
+          row('💰 מחיר', `$${d1.c?.toFixed(2)||'N/A'}`, `$${d2.c?.toFixed(2)||'N/A'}`),
+          row('📈 שינוי יומי', `${chg1>=0?'+':''}${chg1?.toFixed(2)||'0'}%`, `${chg2>=0?'+':''}${chg2?.toFixed(2)||'0'}%`),
+          row('🔼 גבוה יומי', `$${d1.h?.toFixed(2)||'N/A'}`, `$${d2.h?.toFixed(2)||'N/A'}`),
+          row('🔽 נמוך יומי', `$${d1.l?.toFixed(2)||'N/A'}`, `$${d2.l?.toFixed(2)||'N/A'}`),
+          row('🏢 שווי שוק', d1.marketCapitalization ? `$${(d1.marketCapitalization/1000).toFixed(1)}B` : 'N/A', d2.marketCapitalization ? `$${(d2.marketCapitalization/1000).toFixed(1)}B` : 'N/A'),
+          row('🏭 ענף', d1.finnhubIndustry||'N/A', d2.finnhubIndustry||'N/A')
+        )
+        .setColor(chg1 > chg2 ? 0x2ecc71 : 0xe74c3c)
+        .setTimestamp();
+      return interaction.editReply({embeds:[e]});
+    } catch(err:any) {
+      return interaction.editReply({embeds:[errEmbed(`שגיאה: ${err.message}`)]});
+    }
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  MARKET SUMMARY
+  // ══════════════════════════════════════════════════════
+  if (commandName === 'market-summary') {
+    const finnhubKey = process.env.FINNHUB_KEY || '';
+    if (!finnhubKey) return interaction.editReply({embeds:[errEmbed('חסר FINNHUB_KEY')]});
+    const indices = [
+      {symbol:'SPY', name:'S&P 500'},
+      {symbol:'QQQ', name:'NASDAQ'},
+      {symbol:'DIA', name:'DOW JONES'},
+      {symbol:'IWM', name:'Russell 2000'},
+      {symbol:'VIX', name:'VIX פחד'},
+      {symbol:'GLD', name:'זהב (GLD)'},
+      {symbol:'TLT', name:'אג"ח ארוך'},
+      {symbol:'BTC-USD', name:'Bitcoin'},
+    ];
+    const results = await Promise.allSettled(
+      indices.map(i => axios.get(`https://finnhub.io/api/v1/quote?symbol=${i.symbol}&token=${finnhubKey}`))
+    );
+    const fields = indices.map((idx, i) => {
+      const r = results[i];
+      if (r.status === 'rejected' || !r.value.data.c) return {name: idx.name, value: '❌ N/A', inline: true};
+      const d = r.value.data;
+      const chg = d.dp || 0;
+      const arrow = chg >= 0 ? '🟢' : '🔴';
+      return {name: idx.name, value: `${arrow} $${d.c?.toFixed(2)} (${chg>=0?'+':''}${chg.toFixed(2)}%)`, inline: true};
+    });
+    const now = new Date().toLocaleString('he-IL', {timeZone:'America/New_York'});
+    const e = new EmbedBuilder()
+      .setTitle('🌍 סיכום שוק עולמי')
+      .setDescription(`⏰ שעון ניו יורק: ${now}`)
+      .addFields(fields)
+      .setColor(0x3498db)
+      .setTimestamp();
+    return interaction.editReply({embeds:[e]});
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  FEAR & GREED INDEX
+  // ══════════════════════════════════════════════════════
+  if (commandName === 'fear-greed') {
+    try {
+      const r = await axios.get('https://production.dataviz.cnn.io/index/fearandgreed/graphdata', {
+        headers: {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.cnn.com/'}
+      });
+      const score = Math.round(r.data?.fear_and_greed?.score || 0);
+      const rating = r.data?.fear_and_greed?.rating || '';
+      const prev_close = Math.round(r.data?.fear_and_greed?.previous_close || 0);
+      const prev_week = Math.round(r.data?.fear_and_greed?.previous_1_week || 0);
+      const prev_month = Math.round(r.data?.fear_and_greed?.previous_1_month || 0);
+      const prev_year = Math.round(r.data?.fear_and_greed?.previous_1_year || 0);
+      const getEmoji = (s:number) => s <= 25 ? '😱 פחד קיצוני' : s <= 45 ? '😨 פחד' : s <= 55 ? '😐 ניטרלי' : s <= 75 ? '😏 חמדנות' : '🤑 חמדנות קיצונית';
+      const getColor = (s:number) => s <= 25 ? 0xe74c3c : s <= 45 ? 0xe67e22 : s <= 55 ? 0xf1c40f : s <= 75 ? 0x2ecc71 : 0x27ae60;
+      const bar = '█'.repeat(Math.round(score/10)) + '░'.repeat(10-Math.round(score/10));
+      const e = new EmbedBuilder()
+        .setTitle('😱 Fear & Greed Index — CNN')
+        .setDescription(`## ${score}/100 — ${getEmoji(score)}\n\`${bar}\`\n\n**ציון רשמי:** ${rating}`)
+        .addFields(
+          {name:'📅 אתמול', value:`${prev_close} — ${getEmoji(prev_close)}`, inline:true},
+          {name:'📅 שבוע שעבר', value:`${prev_week} — ${getEmoji(prev_week)}`, inline:true},
+          {name:'📅 חודש שעבר', value:`${prev_month} — ${getEmoji(prev_month)}`, inline:true},
+          {name:'📅 שנה שעברה', value:`${prev_year} — ${getEmoji(prev_year)}`, inline:true},
+          {name:'💡 מה זה אומר?', value:score<=45?'🐻 **זמן לקנות?** — שוק פחד לרוב יוצר הזדמנויות':score>=55?'🐂 **שוק חמדני** — היזהר מבועות':'⚖️ **שוק מאוזן** — אין לחץ', inline:false}
+        )
+        .setColor(getColor(score))
+        .setTimestamp();
+      return interaction.editReply({embeds:[e]});
+    } catch(err:any) {
+      return interaction.editReply({embeds:[errEmbed(`לא ניתן לטעון את המדד: ${err.message}`)]});
+    }
   }
 
   if (commandName === 'setup-stocks') {
