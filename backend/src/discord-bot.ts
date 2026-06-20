@@ -902,33 +902,46 @@ if (commandName === 'uptime') {
   if (commandName === 'stock') {
     const symbol = interaction.options.getString('symbol').toUpperCase();
     try {
-      // Use stooq.com - free, no API key needed
-      const res = await axios.get(`https://stooq.com/q/l/?s=${symbol.toLowerCase()}.us&f=sd2t2ohlcv&h&e=json`, {
-        timeout: 10000
-      });
-      const row = res.data?.symbols?.[0];
-      if (!row || !row.close) return interaction.editReply({embeds:[errEmbed(`לא נמצאה מניה: ${symbol} (נסה: AAPL, TSLA, MSFT, GOOGL)`)]});
+      const finnhubKey = process.env.FINNHUB_KEY || '';
+      if (!finnhubKey) {
+        return interaction.editReply({embeds:[errEmbed(
+          'חסר FINNHUB_KEY ב-Railway!\n\n1. לך ל-**finnhub.io** → Sign up (חינמי)\n2. קבל API Key\n3. הוסף ב-Railway כ-`FINNHUB_KEY`'
+        )]});
+      }
 
-      const price = parseFloat(row.close);
-      const open = parseFloat(row.open);
-      const change = price - open;
-      const changePct = ((change / open) * 100).toFixed(2);
+      // Finnhub - free real-time stock data
+      const [quoteRes, profileRes] = await Promise.all([
+        axios.get(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubKey}`),
+        axios.get(`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${finnhubKey}`),
+      ]);
+
+      const q = quoteRes.data;
+      const p = profileRes.data;
+      if (!q?.c) return interaction.editReply({embeds:[errEmbed(`לא נמצאה מניה: ${symbol}`)]});
+
+      const price = q.c;
+      const change = q.d;
+      const changePct = q.dp?.toFixed(2);
       const isUp = change >= 0;
       const color = isUp ? 0x2ecc71 : 0xe74c3c;
       const arrow = isUp ? '📈' : '📉';
 
       return interaction.editReply({embeds:[new EmbedBuilder()
-        .setTitle(`${arrow} ${symbol}`)
+        .setTitle(`${arrow} ${symbol}${p?.name ? ` — ${p.name}` : ''}`)
         .setColor(color)
+        .setThumbnail(p?.logo || null)
         .addFields(
           {name:'💵 מחיר', value:`**$${price?.toFixed(2)}**`, inline:true},
-          {name:'📊 שינוי מהפתיחה', value:`${isUp?'+':''}${change?.toFixed(2)} (${isUp?'+':''}${changePct}%)`, inline:true},
-          {name:'🔓 פתיחה', value:`$${open?.toFixed(2)}`, inline:true},
-          {name:'📉 שפל יומי', value:`$${parseFloat(row.low)?.toFixed(2)||'N/A'}`, inline:true},
-          {name:'📈 שיא יומי', value:`$${parseFloat(row.high)?.toFixed(2)||'N/A'}`, inline:true},
-          {name:'💹 נפח מסחר', value:parseInt(row.volume)?.toLocaleString()||'N/A', inline:true},
+          {name:'📊 שינוי היום', value:`${isUp?'+':''}${change?.toFixed(2)} (${isUp?'+':''}${changePct}%)`, inline:true},
+          {name:'🔓 פתיחה', value:`$${q.o?.toFixed(2)||'N/A'}`, inline:true},
+          {name:'📉 שפל יומי', value:`$${q.l?.toFixed(2)||'N/A'}`, inline:true},
+          {name:'📈 שיא יומי', value:`$${q.h?.toFixed(2)||'N/A'}`, inline:true},
+          {name:'📅 סגירה אתמול', value:`$${q.pc?.toFixed(2)||'N/A'}`, inline:true},
+          {name:'🏭 תעשייה', value:p?.finnhubIndustry||'N/A', inline:true},
+          {name:'🌍 מדינה', value:p?.country||'N/A', inline:true},
+          {name:'💱 בורסה', value:p?.exchange||'N/A', inline:true},
         )
-        .setFooter({text:`מקור: Stooq | תאריך: ${row.date||'היום'}`})
+        .setFooter({text:'מקור: Finnhub | עדכון בזמן אמת'})
         .setTimestamp()
       ]});
     } catch(e:any) {
