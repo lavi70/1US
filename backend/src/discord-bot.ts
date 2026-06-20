@@ -210,9 +210,7 @@ const commands = [
   new SlashCommandBuilder().setName('profit').setDescription('💹 מחשבון רווח Etsy').addNumberOption(o=>o.setName('cost').setDescription('עלות ייצור ($)').setRequired(true)).addNumberOption(o=>o.setName('price').setDescription('מחיר מכירה ($)').setRequired(true)).addNumberOption(o=>o.setName('shipping').setDescription('משלוח ($)').setRequired(false)),
   new SlashCommandBuilder().setName('currency').setDescription('💱 המרת מטבע').addNumberOption(o=>o.setName('amount').setDescription('סכום').setRequired(true)).addStringOption(o=>o.setName('from').setDescription('ממטבע (USD/ILS/EUR)').setRequired(true)).addStringOption(o=>o.setName('to').setDescription('למטבע (USD/ILS/EUR)').setRequired(true)),
   new SlashCommandBuilder().setName('etsy-search').setDescription('🛍️ חפש מוצרים ב-Etsy ומחירים').addStringOption(o=>o.setName('keyword').setDescription('מה לחפש').setRequired(true)),
-
-  // SHOP
-  new SlashCommandBuilder().setName('shop').setDescription('חנות מוצרים'),
+  new SlashCommandBuilder().setName('analyze').setDescription('🔬 ניתוח מעמיק של מניה — האם כדאי להיכנס או לצאת?').addStringOption(o=>o.setName('symbol').setDescription('סימול (AAPL, TSLA...)').setRequired(true)),
   new SlashCommandBuilder().setName('buy').setDescription('רכישת מוצר').addStringOption(o=>o.setName('product').setDescription('מזהה').setRequired(true)),
   new SlashCommandBuilder().setName('products').setDescription('רשימת מוצרים'),
 
@@ -1451,6 +1449,126 @@ if (commandName === 'uptime') {
       .setColor(totalPnl >= 0 ? 0x2ecc71 : 0xe74c3c)
       .setTimestamp();
     return interaction.editReply({embeds:[e]});
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  ANALYZE STOCK — DEEP TRADER ANALYSIS
+  // ══════════════════════════════════════════════════════
+  if (commandName === 'analyze') {
+    const symbol = interaction.options.getString('symbol').toUpperCase();
+    const finnhubKey = process.env.FINNHUB_KEY || '';
+    if (!finnhubKey) return interaction.editReply({embeds:[errEmbed('חסר FINNHUB_KEY')]});
+
+    try {
+      const [quoteRes, profileRes, metricsRes, recRes, newsRes] = await Promise.allSettled([
+        axios.get(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubKey}`),
+        axios.get(`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${finnhubKey}`),
+        axios.get(`https://finnhub.io/api/v1/stock/metric?symbol=${symbol}&metric=all&token=${finnhubKey}`),
+        axios.get(`https://finnhub.io/api/v1/stock/recommendation?symbol=${symbol}&token=${finnhubKey}`),
+        axios.get(`https://finnhub.io/api/v1/company-news?symbol=${symbol}&from=${new Date(Date.now()-7*86400000).toISOString().split('T')[0]}&to=${new Date().toISOString().split('T')[0]}&token=${finnhubKey}`)
+      ]);
+
+      const q = quoteRes.status==='fulfilled' ? quoteRes.value.data : {};
+      const p = profileRes.status==='fulfilled' ? profileRes.value.data : {};
+      const m = metricsRes.status==='fulfilled' ? metricsRes.value.data?.metric || {} : {};
+      const recs = recRes.status==='fulfilled' ? recRes.value.data || [] : [];
+      const news = newsRes.status==='fulfilled' ? newsRes.value.data?.slice(0,3) || [] : [];
+
+      if (!q.c || q.c === 0) return interaction.editReply({embeds:[errEmbed(`לא נמצאה מניה: ${symbol}`)]});
+
+      const price = q.c;
+      const change = q.dp || 0;
+      const high52 = m['52WeekHigh'] || q.h || price;
+      const low52 = m['52WeekLow'] || q.l || price;
+      const pe = m.peBasicExclExtraTTM || m.peTTM || null;
+      const eps = m.epsBasicExclExtraItemsTTM || null;
+      const beta = m.beta || null;
+      const roe = m.roeTTM || null;
+      const debtEq = m.totalDebt_totalEquityQuarterly || null;
+      const revenueGrowth = m.revenueGrowthTTMYoy || null;
+      const grossMargin = m.grossMarginTTM || null;
+
+      // Position in 52-week range
+      const range52pct = ((price - low52) / (high52 - low52) * 100).toFixed(1);
+      const rangBar = '█'.repeat(Math.round(parseFloat(range52pct)/10)) + '░'.repeat(10-Math.round(parseFloat(range52pct)/10));
+
+      // Analyst consensus
+      const latestRec = recs[0] || {};
+      const totalRec = (latestRec.strongBuy||0)+(latestRec.buy||0)+(latestRec.hold||0)+(latestRec.sell||0)+(latestRec.strongSell||0);
+      const bullish = (latestRec.strongBuy||0)+(latestRec.buy||0);
+      const bearish = (latestRec.sell||0)+(latestRec.strongSell||0);
+      const analystScore = totalRec ? Math.round((bullish/totalRec)*100) : 50;
+
+      // Technical score (simple)
+      let techScore = 50;
+      if (change > 0) techScore += 5;
+      if (change < 0) techScore -= 5;
+      if (parseFloat(range52pct) > 70) techScore -= 10; // near 52w high = risky
+      if (parseFloat(range52pct) < 30) techScore += 10; // near 52w low = opportunity
+      if (pe && pe > 0 && pe < 20) techScore += 10;
+      if (pe && pe > 40) techScore -= 10;
+      if (beta && beta < 1) techScore += 5;
+      if (beta && beta > 2) techScore -= 5;
+      if (revenueGrowth && revenueGrowth > 10) techScore += 10;
+      techScore = Math.max(0, Math.min(100, techScore));
+
+      // Combined score
+      const combined = Math.round(techScore * 0.4 + analystScore * 0.6);
+
+      // Verdict
+      let verdict: string, verdictColor: number, verdictEmoji: string;
+      if (combined >= 70) { verdict='כדאי לשקול כניסה 🟢'; verdictColor=0x2ecc71; verdictEmoji='🚀'; }
+      else if (combined >= 55) { verdict='ניטרלי — המתן לאישור 🟡'; verdictColor=0xf1c40f; verdictEmoji='⏳'; }
+      else { verdict='זהירות — לא הזמן הנכון 🔴'; verdictColor=0xe74c3c; verdictEmoji='⚠️'; }
+
+      // Risk level
+      const risk = beta ? (beta < 0.8 ? '🟢 נמוך' : beta < 1.5 ? '🟡 בינוני' : '🔴 גבוה') : 'לא ידוע';
+
+      // News translation (fast)
+      const newsLines: string[] = [];
+      for (const n of news.slice(0,2)) {
+        try {
+          const tr = await axios.get(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=he&dt=t&q=${encodeURIComponent(n.headline?.slice(0,100)||'')}`, {timeout:3000});
+          const translated = tr.data?.[0]?.[0]?.[0] || n.headline;
+          newsLines.push(`• ${translated}`);
+        } catch { newsLines.push(`• ${n.headline?.slice(0,80)}`); }
+      }
+
+      const marketCap = p.marketCapitalization ? `$${(p.marketCapitalization/1000).toFixed(1)}B` : 'N/A';
+
+      const e = new EmbedBuilder()
+        .setTitle(`${verdictEmoji} ניתוח מניה: ${symbol} — ${p.name||symbol}`)
+        .setDescription(
+          `**${p.finnhubIndustry||''}** | ${p.country||''} | בורסה: ${p.exchange||''}\n\n` +
+          `> ${p.weburl ? `[אתר החברה](${p.weburl})` : ''}\n\n` +
+          `📋 **מה החברה עושה?**\n${p.name||symbol} פועלת בתחום **${p.finnhubIndustry||'לא ידוע'}**. ` +
+          (p.marketCapitalization>500000 ? 'מדובר בחברת ענק (Large Cap) יציבה עם נוכחות גלובלית.' :
+           p.marketCapitalization>10000 ? 'חברת ביניים (Mid Cap) עם פוטנציאל צמיחה.' :
+           'חברה קטנה (Small Cap) — סיכון גבוה יותר.')
+        )
+        .addFields(
+          {name:'💰 מחיר נוכחי', value:`**$${price.toFixed(2)}** (${change>=0?'+':''}${change.toFixed(2)}%)`, inline:true},
+          {name:'🏢 שווי שוק', value:marketCap, inline:true},
+          {name:'📊 P/E Ratio', value:pe ? `${pe.toFixed(1)}x ${pe<15?'✅ זול':pe<30?'🟡 סביר':'🔴 יקר'}` : 'N/A', inline:true},
+          {name:'📉 טווח 52 שבועות', value:`$${low52.toFixed(2)} — $${high52.toFixed(2)}\n\`${rangBar}\` ${range52pct}%`, inline:false},
+          {name:'⚡ בטא (תנודתיות)', value:`${beta?.toFixed(2)||'N/A'} — סיכון: ${risk}`, inline:true},
+          {name:'💼 EPS', value:eps ? `$${eps.toFixed(2)} ${eps>0?'✅':'🔴'}` : 'N/A', inline:true},
+          {name:'📈 צמיחת הכנסות', value:revenueGrowth ? `${revenueGrowth.toFixed(1)}% ${revenueGrowth>10?'✅':'⚠️'}` : 'N/A', inline:true},
+          {name:'💹 שולי רווח גולמי', value:grossMargin ? `${grossMargin.toFixed(1)}% ${grossMargin>40?'✅ מצוין':grossMargin>20?'🟡 סביר':'🔴 נמוך'}` : 'N/A', inline:true},
+          {name:'🏦 חוב להון', value:debtEq ? `${debtEq.toFixed(2)}x ${debtEq<0.5?'✅ נמוך':debtEq<1.5?'🟡 בינוני':'🔴 גבוה'}` : 'N/A', inline:true},
+          {name:'👨‍💼 המלצות אנליסטים', value:totalRec ? `🟢 קנייה: ${bullish} | ⚪ המתן: ${latestRec.hold||0} | 🔴 מכירה: ${bearish}\n(מתוך ${totalRec} אנליסטים)` : 'אין נתונים', inline:false},
+          {name:'📰 חדשות אחרונות', value:newsLines.length ? newsLines.join('\n') : 'אין חדשות', inline:false},
+          {name:`${verdictEmoji} ציון כולל: ${combined}/100`, value:`**הערכה: ${verdict}**\n💡 ${combined>=70?'המניה מציגה אינדיקטורים חיוביים — בצע Due Diligence לפני כניסה':combined>=55?'שוק ניטרלי — המתן לפריצה ברורה לפני כניסה':'המדדים מצביעים על חולשה — שקול להמתין לתיקון'}`, inline:false}
+        )
+        .setColor(verdictColor)
+        .setFooter({text:'⚠️ זה לא ייעוץ פיננסי — תמיד בצע מחקר עצמאי'})
+        .setTimestamp();
+
+      if (p.logo) e.setThumbnail(p.logo);
+      return interaction.editReply({embeds:[e]});
+    } catch(err:any) {
+      return interaction.editReply({embeds:[errEmbed(`שגיאה: ${err.message}`)]});
+    }
   }
 
   // ══════════════════════════════════════════════════════
