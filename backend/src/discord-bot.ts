@@ -1468,3 +1468,4 @@ client.login(TOKEN);
 console.log('🎮 Discord Bot by Yaniv v3.0 מתחבר...');
 
 export default client;
+// groq-sdk force redeploy Sat Jun 20 11:28:36 UTC 2026
