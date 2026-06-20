@@ -19,9 +19,15 @@ const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '';
 
 async function geminiAsk(prompt: string): Promise<string> {
   const key = process.env.GEMINI_API_KEY || '';
+  if (!key) throw new Error('GEMINI_API_KEY חסר');
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${key}`;
-  const res = await axios.post(url, { contents: [{ parts: [{ text: prompt }] }] });
-  return res.data?.candidates?.[0]?.content?.parts?.[0]?.text || 'אין תשובה';
+  try {
+    const res = await axios.post(url, { contents: [{ parts: [{ text: prompt }] }] });
+    return res.data?.candidates?.[0]?.content?.parts?.[0]?.text || 'אין תשובה';
+  } catch(e: any) {
+    const detail = e.response?.data?.error?.message || e.response?.data || e.message;
+    throw new Error(`Gemini: ${JSON.stringify(detail).slice(0,300)}`);
+  }
 }
 
 if (!TOKEN || !CLIENT_ID) { console.error('❌ DISCORD_BOT_TOKEN or DISCORD_CLIENT_ID is not set'); process.exit(1); }
