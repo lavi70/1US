@@ -17,31 +17,40 @@ const execAsync = promisify(exec);
 const TOKEN = process.env.DISCORD_BOT_TOKEN || '';
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '';
 
-async function geminiAsk(prompt: string): Promise<string> {
-  const key = process.env.GEMINI_API_KEY || process.env.GIMINY || process.env.GIMINY_API_KEY || process.env.GEMINI || process.env.GEMINI_KEY || '';
-  if (!key) throw new Error('GEMINI_API_KEY חסר');
+import Groq from 'groq-sdk';
 
-  // Try models in order until one works
+async function geminiAsk(prompt: string): Promise<string> {
+  const key = process.env.GROQ_API_KEY || process.env.GEMINI_API_KEY || process.env.GIMINY || '';
+  if (!key) throw new Error('GROQ_API_KEY לא מוגדר ב-Railway');
+
+  // Use Groq (free, unlimited)
+  if (process.env.GROQ_API_KEY) {
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    const res = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    return res.choices[0]?.message?.content || 'אין תשובה';
+  }
+
+  // Fallback: Gemini
+  const errors: string[] = [];
   const models = [
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
-    'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-001:generateContent',
   ];
-
-  const errors: string[] = [];
   for (const baseUrl of models) {
     try {
       const res = await axios.post(`${baseUrl}?key=${key}`, { contents: [{ parts: [{ text: prompt }] }] });
       const text = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (text) return text;
-      errors.push(`${baseUrl.split('/models/')[1]}: תשובה ריקה`);
     } catch(e: any) {
-      const msg = e.response?.data?.error?.message || e.message || 'unknown';
-      errors.push(`${baseUrl.split('/models/')[1]}: ${msg.slice(0,100)}`);
+      errors.push(e.response?.data?.error?.message || e.message || 'error');
     }
   }
-  throw new Error(`שגיאות: ${errors.join(' | ')}`);
+  throw new Error(`שגיאת AI: ${errors[0]?.slice(0,150)}`);
+}
 }
 
 if (!TOKEN || !CLIENT_ID) { console.error('❌ DISCORD_BOT_TOKEN or DISCORD_CLIENT_ID is not set'); process.exit(1); }

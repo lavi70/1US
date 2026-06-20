@@ -17,6 +17,7 @@
     "@discordjs/rest": "^2.6.1",
     "@types/form-data": "^2.2.1",
     "@types/node-telegram-bot-api": "^0.64.15",
+    "groq-sdk": "^0.7.0",
     "axios": "^1.7.2",
     "better-sqlite3": "^9.6.0",
     "cors": "^2.8.5",
