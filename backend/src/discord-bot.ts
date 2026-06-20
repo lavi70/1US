@@ -1591,7 +1591,12 @@ if (commandName === 'uptime') {
           },
           backgroundColor:'#131722'
         };
-        chartUrl = `https://quickchart.io/chart?w=820&h=420&v=${Date.now()}&c=${encodeURIComponent(JSON.stringify(cfg))}`;
+        try {
+          const qcRes = await axios.post('https://quickchart.io/chart/create', {chart: cfg, width:820, height:420, backgroundColor:'#131722'}, {timeout:10000});
+          if (qcRes.data?.url) chartUrl = qcRes.data.url;
+        } catch {
+          chartUrl = `https://quickchart.io/chart?w=820&h=420&c=${encodeURIComponent(JSON.stringify(cfg))}`.slice(0,2000);
+        }
       }
 
       // ── Analyst ────────────────────────────────────────
@@ -1663,12 +1668,11 @@ if (commandName === 'uptime') {
           {name:'👨‍💼 אנליסטים', value:totalRec?`${analystBar} 🟢${bullish} ⚪${rec.hold||0} 🔴${bearish} (${totalRec})`:'—', inline:false},
           {name:'📰 חדשות', value:safeNews||'אין חדשות', inline:false}
         )
-        .setImage(chartUrl||'')
-
         .setColor(verdictColor)
         .setFooter({text:`${symbol} · Daily · MA20 · MA50 · R/S · ⚠️ לא ייעוץ פיננסי`})
         .setTimestamp();
 
+      if (chartUrl) e.setImage(chartUrl);
       if (p.logo) e.setThumbnail(p.logo);
       return e;
     };
