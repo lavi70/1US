@@ -17,41 +17,6 @@ const execAsync = promisify(exec);
 const TOKEN = process.env.DISCORD_BOT_TOKEN || '';
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '';
 
-import Groq from 'groq-sdk';
-
-async function geminiAsk(prompt: string): Promise<string> {
-  const key = process.env.GROQ_API_KEY || process.env.GEMINI_API_KEY || process.env.GIMINY || '';
-  if (!key) throw new Error('GROQ_API_KEY לא מוגדר ב-Railway');
-
-  // Use Groq (free, unlimited)
-  if (process.env.GROQ_API_KEY) {
-    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-    const res = await groq.chat.completions.create({
-      model: 'llama-3.1-8b-instant',
-      max_tokens: 1024,
-      messages: [{ role: 'user', content: prompt }],
-    });
-    return res.choices[0]?.message?.content || 'אין תשובה';
-  }
-
-  // Fallback: Gemini
-  const errors: string[] = [];
-  const models = [
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
-  ];
-  for (const baseUrl of models) {
-    try {
-      const res = await axios.post(`${baseUrl}?key=${key}`, { contents: [{ parts: [{ text: prompt }] }] });
-      const text = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (text) return text;
-    } catch(e: any) {
-      errors.push(e.response?.data?.error?.message || e.message || 'error');
-    }
-  }
-  throw new Error(`שגיאת AI: ${errors[0]?.slice(0,150)}`);
-}
-}
 
 if (!TOKEN || !CLIENT_ID) { console.error('❌ DISCORD_BOT_TOKEN or DISCORD_CLIENT_ID is not set'); process.exit(1); }
 
@@ -245,12 +210,6 @@ const commands = [
   new SlashCommandBuilder().setName('verify-stats').setDescription('סטטיסטיקות אימות'),
   new SlashCommandBuilder().setName('unverify').setDescription('הסרת אימות ממשתמש (Admin)').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)),
 
-  // AI
-  new SlashCommandBuilder().setName('ask').setDescription('🤖 שאל את Claude AI שאלה חכמה').addStringOption(o=>o.setName('question').setDescription('השאלה שלך').setRequired(true)),
-  new SlashCommandBuilder().setName('chat').setDescription('💬 שוחח עם Claude AI').addStringOption(o=>o.setName('message').setDescription('הודעה').setRequired(true)),
-  new SlashCommandBuilder().setName('summarize').setDescription('📝 סכם טקסט עם AI').addStringOption(o=>o.setName('text').setDescription('טקסט לסיכום').setRequired(true)),
-  new SlashCommandBuilder().setName('code').setDescription('💻 בקש קוד מ-AI').addStringOption(o=>o.setName('request').setDescription('מה הקוד צריך לעשות').setRequired(true)).addStringOption(o=>o.setName('language').setDescription('שפת תכנות').setRequired(false)),
-  new SlashCommandBuilder().setName('translate-ai').setDescription('🌐 תרגם עם AI').addStringOption(o=>o.setName('text').setDescription('טקסט לתרגום').setRequired(true)).addStringOption(o=>o.setName('language').setDescription('לאיזו שפה?').setRequired(true)),
 
   // SERVER SETUP
   new SlashCommandBuilder().setName('setup-server').setDescription('🏗️ בנה שרת מקצועי מלא עם ערוצים, תפקידים וטיקטים (Admin)').addStringOption(o=>o.setName('name').setDescription('שם השרת (אופציונלי)').setRequired(false)),
@@ -329,17 +288,7 @@ client.on('interactionCreate', async (interaction: any) => {
     return interaction.editReply({embeds:[embed('🏓 Pong!',`⚡ Latency: **${lat}ms**\n💓 API: **${Math.round(client.ws.ping)}ms**`,0x00ff00)]});
   }
 
-  if (commandName === 'debug-env') {
-    if (!isAdmin(interaction)) return interaction.editReply('❌ אדמין בלבד');
-    const aiKey = process.env.GEMINI_API_KEY || process.env.GIMINY || process.env.GIMINY_API_KEY || process.env.GEMINI || process.env.GEMINI_KEY || '';
-    const vars = Object.keys(process.env).filter(k => !/(password|secret|token)/i.test(k));
-    return interaction.editReply({embeds:[embed('🔍 Debug ENV',
-      `**AI Key נמצא:** ${aiKey ? `✅ (${aiKey.slice(0,8)}...)` : '❌ לא נמצא!'}\n**כל המשתנים:** ${vars.join(', ')}`,
-      aiKey ? 0x00ff00 : 0xff0000
-    )]});
-  }
-
-  if (commandName === 'uptime') {
+if (commandName === 'uptime') {
     return interaction.editReply({embeds:[embed('⏱️ Uptime',`Bot: **${formatUptime(process.uptime())}**\nServer: **${formatUptime(os.uptime())}**`)]});
   }
 
@@ -1055,48 +1004,6 @@ client.on('interactionCreate', async (interaction: any) => {
     return interaction.editReply({embeds:[embed('🔒 אימות הוסר',`**${u.username}** הוסר מהמאומתים`,0xff6b35)]});
   }
 
-  // ══════════════════════════════════════════════════════
-  //  AI COMMANDS
-  // ══════════════════════════════════════════════════════
-  if (['ask','chat','summarize','code','translate-ai'].includes(commandName)) {
-    if (!process.env.GEMINI_API_KEY && !process.env.GIMINY) {
-      return interaction.editReply({embeds:[errEmbed('GEMINI_API_KEY לא מוגדר ב-Railway')]});
-    }
-
-    let prompt = '';
-    let systemPrompt = 'אתה עוזר AI חכם בשם Yaniv Bot. ענה בעברית אלא אם ביקשו אחרת. היה מועיל, ידידותי וקצר.';
-
-    if (commandName === 'ask' || commandName === 'chat') {
-      prompt = interaction.options.getString('question') || interaction.options.getString('message');
-    } else if (commandName === 'summarize') {
-      const text = interaction.options.getString('text');
-      prompt = `סכם את הטקסט הבא בקצרה ובנקודות עיקריות:\n\n${text}`;
-    } else if (commandName === 'code') {
-      const req = interaction.options.getString('request');
-      const lang = interaction.options.getString('language') || 'JavaScript';
-      prompt = `כתוב קוד ב-${lang} שעושה: ${req}\n\nהסבר קצר + קוד בלוק.`;
-      systemPrompt = `אתה מומחה תכנות. ענה עם הסבר קצר וקוד נקי. השתמש ב-markdown code blocks.`;
-    } else if (commandName === 'translate-ai') {
-      const text = interaction.options.getString('text');
-      const lang = interaction.options.getString('language');
-      prompt = `תרגם את הטקסט הבא ל-${lang}:\n\n${text}`;
-    }
-
-    try {
-      const response = await geminiAsk(`${systemPrompt}\n\n${prompt}`);
-
-      const cmdEmoji = commandName==='code'?'💻':commandName==='summarize'?'📝':commandName==='translate-ai'?'🌐':'🤖';
-      const e = new EmbedBuilder()
-        .setTitle(`${cmdEmoji} Yaniv AI`)
-        .setDescription(response.slice(0,4000))
-        .setColor(0x10a37f)
-        .setFooter({text:`שאל: ${user.username} | Powered by Groq AI 🚀`})
-        .setTimestamp();
-      return interaction.editReply({embeds:[e]});
-    } catch(e:any) {
-      return interaction.editReply({embeds:[errEmbed(`שגיאת AI: ${e.message?.slice(0,200)}`)]});
-    }
-  }
 
   // ══════════════════════════════════════════════════════
   //  SETUP SERVER
@@ -1482,25 +1389,10 @@ client.on('messageCreate', async (message: any) => {
     }
   }
 
-  // AI — ענה כשמזכירים את הבוט
-  if (message.mentions?.has(client.user) && process.env.GEMINI_API_KEY) {
-    const content = message.content.replace(/<@!?\d+>/g,'').trim();
-    if (!content) return message.reply('שאל אותי משהו! 🤖').catch(()=>{});
-    try {
-      message.channel.sendTyping().catch(()=>{});
-      const reply = await geminiAsk(`אתה עוזר AI חכם בשם Yaniv Bot. ענה בעברית, היה קצר וידידותי.\n\n${content}`);
-      message.reply(`🤖 **Yaniv AI:** ${reply.slice(0,1900)}`).catch(()=>{});
-    } catch(e:any) {
-      message.reply(`❌ שגיאת AI: ${e.message?.slice(0,100)}`).catch(()=>{});
-    }
-  }
 });
 
 client.login(TOKEN);
-const aiKey = process.env.GEMINI_API_KEY || process.env.GIMINY || process.env.GIMINY_API_KEY || process.env.GEMINI || process.env.GEMINI_KEY || '';
 console.log('🎮 Discord Bot by Yaniv v3.0 מתחבר...');
-console.log(`🤖 Gemini AI Key: ${aiKey ? `✅ נמצא (${aiKey.slice(0,8)}...)` : '❌ לא נמצא!'}`);
-console.log(`📋 כל משתני הסביבה: ${Object.keys(process.env).join(', ')}`);
 
 export default client;
 // groq-sdk force redeploy Sat Jun 20 11:28:36 UTC 2026
