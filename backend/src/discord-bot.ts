@@ -10,13 +10,13 @@ import { exec, execSync } from 'child_process';
 import { promisify } from 'util';
 import * as os from 'os';
 import * as fs from 'fs';
-import OpenAI from 'openai';
+import Groq from 'groq-sdk';
 
 const execAsync = promisify(exec);
 
 const TOKEN = process.env.DISCORD_BOT_TOKEN || '';
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '';
-const openai = new OpenAI({apiKey: process.env.OPENAI_API_KEY||''});
+const groq = new Groq({apiKey: process.env.GROQ_API_KEY||''});
 
 if (!TOKEN || !CLIENT_ID) { console.error('❌ DISCORD_BOT_TOKEN or DISCORD_CLIENT_ID is not set'); process.exit(1); }
 
@@ -1014,8 +1014,8 @@ client.on('interactionCreate', async (interaction: any) => {
   //  AI COMMANDS
   // ══════════════════════════════════════════════════════
   if (['ask','chat','summarize','code','translate-ai'].includes(commandName)) {
-    if (!process.env.OPENAI_API_KEY) {
-      return interaction.editReply({embeds:[errEmbed('OPENAI_API_KEY לא מוגדר ב-Railway')]});
+    if (!process.env.GROQ_API_KEY) {
+      return interaction.editReply({embeds:[errEmbed('GROQ_API_KEY לא מוגדר ב-Railway')]});
     }
 
     let prompt = '';
@@ -1038,8 +1038,8 @@ client.on('interactionCreate', async (interaction: any) => {
     }
 
     try {
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+      const completion = await groq.chat.completions.create({
+        model: 'llama-3.1-8b-instant',
         max_tokens: 1024,
         messages: [{role:'system',content:systemPrompt},{role:'user',content:prompt}],
       });
@@ -1050,7 +1050,7 @@ client.on('interactionCreate', async (interaction: any) => {
         .setTitle(`${cmdEmoji} Yaniv AI`)
         .setDescription(response.slice(0,4000))
         .setColor(0x10a37f)
-        .setFooter({text:`שאל: ${user.username} | Powered by ChatGPT 🚀`})
+        .setFooter({text:`שאל: ${user.username} | Powered by Groq AI 🚀`})
         .setTimestamp();
       return interaction.editReply({embeds:[e]});
     } catch(e:any) {
@@ -1443,13 +1443,13 @@ client.on('messageCreate', async (message: any) => {
   }
 
   // AI — ענה כשמזכירים את הבוט
-  if (message.mentions?.has(client.user) && process.env.OPENAI_API_KEY) {
+  if (message.mentions?.has(client.user) && process.env.GROQ_API_KEY) {
     const content = message.content.replace(/<@!?\d+>/g,'').trim();
     if (!content) return message.reply('שאל אותי משהו! 🤖').catch(()=>{});
     try {
       message.channel.sendTyping().catch(()=>{});
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+      const completion = await groq.chat.completions.create({
+        model: 'llama-3.1-8b-instant',
         max_tokens: 512,
         messages: [
           {role:'system', content:'אתה עוזר AI חכם בשם Yaniv Bot. ענה בעברית, היה קצר וידידותי.'},
