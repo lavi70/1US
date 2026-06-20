@@ -81,11 +81,21 @@ export default function NewListing() {
 
   const onDrop = useCallback((accepted: File[]) => {
     const newFiles = accepted.slice(0, 10 - images.length);
-    setImages(prev => [...prev, ...newFiles]);
     newFiles.forEach(f => {
-      const reader = new FileReader();
-      reader.onload = e => setImagePreviews(prev => [...prev, e.target?.result as string]);
-      reader.readAsDataURL(f);
+      const img = new Image();
+      const url = URL.createObjectURL(f);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        if (img.width < 2000 || img.height < 2000) {
+          alert(`התמונה "${f.name}" קטנה מדי (${img.width}×${img.height}px). נדרש מינימום 2000×2000 פיקסל.`);
+          return;
+        }
+        setImages(prev => [...prev, f]);
+        const reader = new FileReader();
+        reader.onload = e => setImagePreviews(prev => [...prev, e.target?.result as string]);
+        reader.readAsDataURL(f);
+      };
+      img.src = url;
     });
   }, [images]);
 
