@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom';
-import { Store, Search, PlusSquare, LayoutDashboard, Package, ShoppingBag, TrendingUp, MoreHorizontal, Sparkles, Zap, DollarSign, ShieldCheck, BarChart2 } from 'lucide-react';
+import { Store, Search, PlusSquare, LayoutDashboard, Package, ShoppingBag, TrendingUp, MoreHorizontal, Sparkles, Zap, DollarSign, ShieldCheck, BarChart2, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import Dashboard from './pages/Dashboard';
 import Shops from './pages/Shops';
@@ -17,10 +17,12 @@ import ProfitCalc from './pages/ProfitCalc';
 import SEOAudit from './pages/SEOAudit';
 import Inventory from './pages/Inventory';
 import OAuthCallback from './pages/OAuthCallback';
+import Finance from './pages/Finance';
 
 function MoreMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (!open) return null;
   const items = [
+    { to: '/finance',     icon: Wallet,        label: 'כסף' },
     { to: '/analytics',   icon: TrendingUp,    label: 'אנליטיקס' },
     { to: '/bulk',        icon: PlusSquare,    label: 'העלאה מרובה' },
     { to: '/templates',   icon: Package,       label: 'תבניות' },
@@ -59,7 +61,7 @@ function NavBar() {
     { to: '/orders',   icon: ShoppingBag,     label: 'הזמנות' },
   ];
 
-  const moreRoutes = ['/analytics', '/bulk', '/templates', '/settings', '/ai', '/quick-edit', '/profit', '/seo-audit', '/inventory'];
+  const moreRoutes = ['/finance', '/analytics', '/bulk', '/templates', '/settings', '/ai', '/quick-edit', '/profit', '/seo-audit', '/inventory'];
   const moreActive = moreRoutes.some(r => location.pathname.startsWith(r));
 
   return (
@@ -108,6 +110,7 @@ export default function App() {
           <Route path="/seo-audit"         element={<SEOAudit />} />
           <Route path="/inventory"         element={<Inventory />} />
           <Route path="/settings"          element={<SettingsPage />} />
+          <Route path="/finance"           element={<Finance />} />
         </Routes>
         <NavBar />
       </div>
