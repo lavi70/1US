@@ -1590,7 +1590,7 @@ if (commandName === 'uptime') {
           },
           backgroundColor:'#1e1e2e'
         };
-        chartUrl = `https://quickchart.io/chart?w=800&h=380&c=${encodeURIComponent(JSON.stringify(cfg))}`;
+        chartUrl = `https://quickchart.io/chart?w=800&h=380&v=${Date.now()}&c=${encodeURIComponent(JSON.stringify(cfg))}`;
       }
 
       // ── Analyst ────────────────────────────────────────
