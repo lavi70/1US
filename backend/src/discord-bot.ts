@@ -1279,11 +1279,16 @@ if (commandName === 'uptime') {
     const finnhubKey = process.env.FINNHUB_KEY || '';
     if (!finnhubKey) return interaction.editReply({embeds:[errEmbed('חסר FINNHUB_KEY')]});
 
-    // Stop any existing ticker in this channel
+    // Stop any existing ticker in this channel and delete old message
     for (const [msgId, ticker] of liveTickers.entries()) {
       if (ticker.channelId === interaction.channelId) {
         clearInterval(ticker.intervalId);
         liveTickers.delete(msgId);
+        try {
+          const ch = await client.channels.fetch(ticker.channelId) as any;
+          const oldMsg = await ch.messages.fetch(msgId);
+          await oldMsg.delete();
+        } catch {}
       }
     }
 
