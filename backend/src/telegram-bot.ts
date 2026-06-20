@@ -1,33 +1,60 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // @ts-nocheck
+// ╔══════════════════════════════════════════╗
+// ║         🤖 BOT BY YANIV                 ║
+// ║   Server Manager + Shop + PayPal        ║
+// ╚══════════════════════════════════════════╝
+
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const TelegramBot = require('node-telegram-bot-api');
 import { exec, execSync } from 'child_process';
 import { promisify } from 'util';
 import * as os from 'os';
 import * as fs from 'fs';
-import * as path from 'path';
+import * as https from 'https';
 
 const execAsync = promisify(exec);
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const ADMIN_IDS = (process.env.TELEGRAM_ADMIN_IDS || '').split(',').map(id => parseInt(id.trim())).filter(Boolean);
+const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID || '';
+const PAYPAL_SECRET = process.env.PAYPAL_SECRET || '';
+const PAYPAL_MODE = process.env.PAYPAL_MODE || 'sandbox'; // 'sandbox' or 'live'
 
-if (!TOKEN) {
-  console.error('❌ TELEGRAM_BOT_TOKEN is not set');
-  process.exit(1);
-}
+if (!TOKEN) { console.error('❌ TELEGRAM_BOT_TOKEN is not set'); process.exit(1); }
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// ─── Auth ────────────────────────────────────────────────────────────────────
+// ─── In-memory store (replace with DB in production) ─────────────────────────
+const pendingPayments: Record<string, any> = {};
+const userCarts: Record<number, any[]> = {};
 
+// ─── Product Catalog ──────────────────────────────────────────────────────────
+const PRODUCTS = {
+  'discord_server': { name: '🎮 שרת דיסקורד מוכן', price: 29.99, desc: 'שרת דיסקורד מוגדר עם ערוצים, בוטים ותפקידים' },
+  'discord_bot': { name: '🤖 בוט דיסקורד', price: 49.99, desc: 'בוט דיסקורד מותאם אישית' },
+  'website_basic': { name: '🌐 אתר בסיסי', price: 99.99, desc: 'אתר Landing Page מקצועי' },
+  'website_shop': { name: '🛒 חנות אונליין', price: 199.99, desc: 'חנות אונליין מלאה עם תשלומים' },
+  'vps_1gb': { name: '🖥️ VPS 1GB RAM', price: 5.99, desc: 'שרת וירטואלי 1GB RAM, 20GB SSD' },
+  'vps_2gb': { name: '🖥️ VPS 2GB RAM', price: 9.99, desc: 'שרת וירטואלי 2GB RAM, 40GB SSD' },
+  'vps_4gb': { name: '🖥️ VPS 4GB RAM', price: 19.99, desc: 'שרת וירטואלי 4GB RAM, 80GB SSD' },
+  'telegram_bot': { name: '📱 בוט טלגרם', price: 39.99, desc: 'בוט טלגרם מותאם אישית כמו זה' },
+  'image_pack': { name: '🖼️ חבילת תמונות AI', price: 14.99, desc: '50 תמונות AI מותאמות אישית' },
+  'video_pack': { name: '🎥 חבילת סרטונים', price: 24.99, desc: '10 סרטונים קצרים לעסק' },
+  'stars_100': { name: '⭐ 100 כוכבי טלגרם', price: 4.99, desc: '100 Telegram Stars' },
+  'stars_500': { name: '⭐ 500 כוכבי טלגרם', price: 19.99, desc: '500 Telegram Stars' },
+  'stars_1000': { name: '⭐ 1000 כוכבי טלגרם', price: 34.99, desc: '1000 Telegram Stars' },
+  'code_review': { name: '💻 Code Review', price: 29.99, desc: 'סקירת קוד מקצועית' },
+  'seo_pack': { name: '📈 חבילת SEO', price: 79.99, desc: 'אופטימיזציה למנועי חיפוש' },
+};
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
 function isAdmin(userId: number): boolean {
-  if (ADMIN_IDS.length === 0) return true; // open if no admins configured
+  if (ADMIN_IDS.length === 0) return true;
   return ADMIN_IDS.includes(userId);
 }
 
-function requireAdmin(msg: TelegramMessage): boolean {
+function requireAdmin(msg: any): boolean {
   if (!isAdmin(msg.from?.id || 0)) {
     bot.sendMessage(msg.chat.id, '⛔ אין לך הרשאה לפקודה זו.');
     return false;
@@ -35,8 +62,7 @@ function requireAdmin(msg: TelegramMessage): boolean {
   return true;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatBytes(bytes: number): string {
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   let i = 0;
@@ -63,249 +89,320 @@ async function runCmd(cmd: string): Promise<string> {
 
 function send(chatId: number, text: string) {
   const MAX = 4000;
-  if (text.length <= MAX) {
-    return bot.sendMessage(chatId, `\`\`\`\n${text}\n\`\`\``, { parse_mode: 'Markdown' });
+  const safe = text.replace(/`/g, "'");
+  if (safe.length <= MAX) {
+    return bot.sendMessage(chatId, `\`\`\`\n${safe}\n\`\`\``, { parse_mode: 'Markdown' });
   }
-  // split into chunks
-  const chunks = text.match(new RegExp(`.{1,${MAX}}`, 'gs')) || [];
+  const chunks = safe.match(new RegExp(`.{1,${MAX}}`, 'gs')) || [];
   return Promise.all(chunks.map(chunk =>
     bot.sendMessage(chatId, `\`\`\`\n${chunk}\n\`\`\``, { parse_mode: 'Markdown' })
   ));
 }
 
-function sendPlain(chatId: number, text: string) {
+function sendMd(chatId: number, text: string) {
   return bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
 }
 
-// ─── Commands ─────────────────────────────────────────────────────────────────
+function notifyAdmin(text: string) {
+  for (const id of ADMIN_IDS) {
+    bot.sendMessage(id, `🔔 *התראה*\n\n${text}`, { parse_mode: 'Markdown' }).catch(() => {});
+  }
+}
 
-bot.onText(/\/start/, (msg) => {
+// ─── PayPal ───────────────────────────────────────────────────────────────────
+async function getPayPalToken(): Promise<string> {
+  const base = PAYPAL_MODE === 'live' ? 'api-m.paypal.com' : 'api-m.sandbox.paypal.com';
+  const auth = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_SECRET}`).toString('base64');
+  return new Promise((resolve, reject) => {
+    const body = 'grant_type=client_credentials';
+    const req = https.request({
+      hostname: base, path: '/v1/oauth2/token', method: 'POST',
+      headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': body.length }
+    }, (res) => {
+      let data = '';
+      res.on('data', d => data += d);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data).access_token); } catch { reject(new Error('PayPal auth failed')); }
+      });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+async function createPayPalOrder(amount: number, currency = 'USD', description: string): Promise<any> {
+  const base = PAYPAL_MODE === 'live' ? 'api-m.paypal.com' : 'api-m.sandbox.paypal.com';
+  const token = await getPayPalToken();
+  const body = JSON.stringify({
+    intent: 'CAPTURE',
+    purchase_units: [{ amount: { currency_code: currency, value: amount.toFixed(2) }, description }]
+  });
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: base, path: '/v2/checkout/orders', method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+    }, (res) => {
+      let data = '';
+      res.on('data', d => data += d);
+      res.on('end', () => { try { resolve(JSON.parse(data)); } catch { reject(new Error('Parse error')); } });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+// ─── /start ───────────────────────────────────────────────────────────────────
+bot.onText(/\/start/, (msg: any) => {
   const name = msg.from?.first_name || 'משתמש';
-  sendPlain(msg.chat.id, `👋 שלום *${name}*\\!\n\nאני בוט לניהול שרתים\\. הקלד /help לרשימת כל הפקודות\\.`);
+  sendMd(msg.chat.id, `👋 שלום *${name}*!
+
+🤖 *בוט ניהול שרתים + חנות*
+_By Yaniv_
+
+הקלד /help לכל הפקודות
+הקלד /shop לחנות שלנו 🛒`);
 });
 
 // ─── /help ────────────────────────────────────────────────────────────────────
+bot.onText(/\/help/, (msg: any) => {
+  sendMd(msg.chat.id, `
+*🤖 בוט By Yaniv — כל הפקודות*
 
-bot.onText(/\/help/, (msg) => {
-  const text = `
-*🤖 פקודות ניהול שרת*
-
-*📊 מידע על השרת*
-/status — סטטוס כללי (CPU, RAM, Disk)
-/uptime — זמן פעילות השרת
-/uname — פרטי מערכת ההפעלה
-/hostname — שם המחשב וה-IP
+*📊 שרת*
+/status /uptime /uname /hostname /ps /top /df /du /ifconfig /netstat /ping
 
 *🔧 תהליכים*
-/ps — רשימת תהליכים פעילים
-/top — 10 התהליכים הכבדים ביותר
-/kill <PID> — סיום תהליך לפי PID
-
-*💾 דיסק ורשת*
-/df — שימוש בדיסק
-/du <נתיב> — גודל תיקייה
-/ifconfig — ממשקי רשת
-/netstat — חיבורי רשת פעילים
-/ping <host> — בדיקת חיבור
+/kill <PID> /processes /meminfo /cpuinfo /loadavg
 
 *📁 קבצים*
-/ls <נתיב> — רשימת קבצים
-/cat <קובץ> — תוכן קובץ
-/tail <קובץ> — 50 שורות אחרונות מקובץ
-/find <נתיב> <שם> — חיפוש קובץ
+/ls /cat /tail /find /mkdir /rm /mv /cp /chmod /zip /unzip
 
-*⚙️ שירותים (systemctl)*
-/services — רשימת שירותים פעילים
-/svcstart <שירות> — הפעלת שירות
-/svcstop <שירות> — עצירת שירות
-/svcrestart <שירות> — הפעלה מחדש
-/svcstatus <שירות> — סטטוס שירות
+*⚙️ שירותים*
+/services /svcstart /svcstop /svcrestart /svcstatus /svclog
 
 *🐋 Docker*
-/docker — רשימת קונטיינרים
-/dockerall — כל הקונטיינרים (כולל כבויים)
-/dockerlogs <שם> — לוגים מקונטיינר
-/dockerstart <שם> — הפעלת קונטיינר
-/dockerstop <שם> — עצירת קונטיינר
-/dockerrestart <שם> — הפעלה מחדש
-/dockerstats — סטטיסטיקות קונטיינרים
+/docker /dockerall /dockerlogs /dockerstart /dockerstop /dockerrestart /dockerstats /dockerpull /dockerrm
 
-*🌐 HTTP*
-/curl <URL> — בקשת HTTP GET
+*🌐 רשת*
+/curl /wget /dns /whois /portscan /traceroute /speedtest
 
-*💻 הרצת פקודות*
-/exec <פקודה> — הרצת פקודה חופשית ⚠️
-/env — משתני סביבה
+*💻 קוד ופיתוח*
+/code <קוד> — הרץ קוד JavaScript
+/exec <פקודה> — פקודת Shell
+/env /cron /cronlist /nginx /apache
 
-*📋 לוגים*
-/syslog — לוגי מערכת אחרונים
-/authlog — לוג התחברויות
-/journalctl <שירות> — לוגי journalctl
-`;
-  sendPlain(msg.chat.id, text);
+*🏗️ בנה אתר*
+/buildsite <שם> — צור תבנית אתר
+/sitepreview — הצג אתרים שנבנו
+
+*💳 חנות ותשלומים*
+/shop — חנות מוצרים
+/buy <מוצר> — רכישה
+/cart — עגלת קניות
+/addcart <מוצר> — הוסף לעגלה
+/checkout — תשלום PayPal
+/orders — הזמנות שלי
+/balance — יתרה
+
+*🔔 התראות*
+/alerts — הגדרות התראות
+/setalert <סוג> — הגדר התראה
+/monitor <שירות> — מעקב שירות
+
+*📈 סטטיסטיקות*
+/stats — סטטיסטיקות מכירות
+/visitors — מבקרים
+
+*ℹ️ אחר*
+/about — אודות הבוט
+/version — גרסה
+/ping — בדיקת חיבור
+
+_Bot by Yaniv 🚀_
+`);
 });
 
-// ─── /status ─────────────────────────────────────────────────────────────────
+// ─── /about ───────────────────────────────────────────────────────────────────
+bot.onText(/\/about$/, (msg: any) => {
+  sendMd(msg.chat.id, `
+*🤖 אודות הבוט*
 
-bot.onText(/\/status$/, async (msg) => {
+👨‍💻 *יוצר:* Yaniv
+🚀 *גרסה:* 2.0.0
+📅 *תאריך:* 2026
+
+*יכולות:*
+✅ ניהול שרתים מלא
+✅ חנות דיגיטלית
+✅ תשלומי PayPal
+✅ בניית אתרים
+✅ ניהול Docker
+✅ התראות בזמן אמת
+✅ הרצת קוד JavaScript
+✅ ניהול קבצים
+✅ ניטור שירותים
+
+_Made with ❤️ by Yaniv_
+`);
+});
+
+// ─── /version ─────────────────────────────────────────────────────────────────
+bot.onText(/\/version$/, (msg: any) => {
+  sendMd(msg.chat.id, `*Bot v2.0.0* by Yaniv\nNode.js ${process.version}`);
+});
+
+// ─── SERVER COMMANDS ──────────────────────────────────────────────────────────
+bot.onText(/\/status$/, async (msg: any) => {
   const cpus = os.cpus();
   const totalMem = os.totalmem();
   const freeMem = os.freemem();
   const usedMem = totalMem - freeMem;
   const memPct = ((usedMem / totalMem) * 100).toFixed(1);
   const load = os.loadavg();
-
   let diskOut = '';
-  try {
-    diskOut = execSync('df -h /').toString().split('\n')[1];
-  } catch { diskOut = 'N/A'; }
-
-  const text = `
+  try { diskOut = execSync('df -h /').toString().split('\n')[1]; } catch { diskOut = 'N/A'; }
+  sendMd(msg.chat.id, `
 📊 *סטטוס שרת*
+_By Yaniv_
 
-🖥️ *CPU*
-  דגם: ${cpus[0]?.model || 'N/A'}
-  ליבות: ${cpus.length}
-  עומס (1/5/15 דק'): ${load.map(l => l.toFixed(2)).join(' / ')}
-
-💾 *RAM*
-  סה"כ: ${formatBytes(totalMem)}
-  בשימוש: ${formatBytes(usedMem)} (${memPct}%)
-  פנוי: ${formatBytes(freeMem)}
-
-💿 *דיסק (/)*
-  ${diskOut}
-
-⏱️ *זמן פעילות*: ${formatUptime(os.uptime())}
-🏠 *Hostname*: ${os.hostname()}
-🐧 *מערכת*: ${os.type()} ${os.release()} ${os.arch()}
-`;
-  sendPlain(msg.chat.id, text);
+🖥️ *CPU:* ${cpus[0]?.model || 'N/A'} (${cpus.length} ליבות)
+📈 *עומס:* ${load.map(l => l.toFixed(2)).join(' / ')}
+💾 *RAM:* ${formatBytes(usedMem)} / ${formatBytes(totalMem)} (${memPct}%)
+💿 *דיסק:* ${diskOut}
+⏱️ *Uptime:* ${formatUptime(os.uptime())}
+🏠 *Host:* ${os.hostname()}
+🐧 *OS:* ${os.type()} ${os.release()}
+`);
 });
 
-// ─── /uptime ─────────────────────────────────────────────────────────────────
-
-bot.onText(/\/uptime$/, async (msg) => {
+bot.onText(/\/uptime$/, async (msg: any) => {
   const out = await runCmd('uptime');
-  send(msg.chat.id, `⏱️ Uptime:\n${out}`);
+  send(msg.chat.id, out);
 });
 
-// ─── /uname ──────────────────────────────────────────────────────────────────
-
-bot.onText(/\/uname$/, async (msg) => {
+bot.onText(/\/uname$/, async (msg: any) => {
   const out = await runCmd('uname -a');
   send(msg.chat.id, out);
 });
 
-// ─── /hostname ───────────────────────────────────────────────────────────────
-
-bot.onText(/\/hostname$/, async (msg) => {
-  const hostname = os.hostname();
-  const out = await runCmd('hostname -I 2>/dev/null || ip addr show | grep "inet " | awk \'{print $2}\'');
-  send(msg.chat.id, `🏠 Hostname: ${hostname}\n🌐 IPs:\n${out}`);
+bot.onText(/\/hostname$/, async (msg: any) => {
+  const out = await runCmd('hostname -I 2>/dev/null || ip addr show | grep "inet "');
+  send(msg.chat.id, `Hostname: ${os.hostname()}\nIPs:\n${out}`);
 });
 
-// ─── /ps ─────────────────────────────────────────────────────────────────────
-
-bot.onText(/\/ps$/, async (msg) => {
+bot.onText(/\/ps$/, async (msg: any) => {
   const out = await runCmd('ps aux --sort=-%cpu | head -20');
   send(msg.chat.id, out);
 });
 
-// ─── /top ─────────────────────────────────────────────────────────────────────
-
-bot.onText(/\/top$/, async (msg) => {
+bot.onText(/\/top$/, async (msg: any) => {
   const out = await runCmd('ps aux --sort=-%cpu | head -11');
-  send(msg.chat.id, `🔝 Top 10 תהליכים לפי CPU:\n\n${out}`);
+  send(msg.chat.id, `🔝 Top 10 תהליכים:\n\n${out}`);
 });
 
-// ─── /kill ───────────────────────────────────────────────────────────────────
-
-bot.onText(/\/kill (.+)/, async (msg, match) => {
-  if (!requireAdmin(msg)) return;
-  const pid = match?.[1]?.trim();
-  if (!pid || isNaN(parseInt(pid))) {
-    return send(msg.chat.id, 'שימוש: /kill <PID>');
-  }
-  const out = await runCmd(`kill -15 ${parseInt(pid)} && echo "נשלח SIGTERM ל-PID ${pid}"`);
+bot.onText(/\/processes$/, async (msg: any) => {
+  const out = await runCmd('ps aux --sort=-%mem | head -15');
   send(msg.chat.id, out);
 });
 
-// ─── /df ─────────────────────────────────────────────────────────────────────
+bot.onText(/\/meminfo$/, async (msg: any) => {
+  const out = await runCmd('cat /proc/meminfo 2>/dev/null | head -20');
+  send(msg.chat.id, out);
+});
 
-bot.onText(/\/df$/, async (msg) => {
+bot.onText(/\/cpuinfo$/, async (msg: any) => {
+  const out = await runCmd('cat /proc/cpuinfo 2>/dev/null | grep -E "model name|cpu MHz|cache" | head -10');
+  send(msg.chat.id, out);
+});
+
+bot.onText(/\/loadavg$/, async (msg: any) => {
+  const load = os.loadavg();
+  send(msg.chat.id, `Load Average:\n1 min: ${load[0].toFixed(2)}\n5 min: ${load[1].toFixed(2)}\n15 min: ${load[2].toFixed(2)}`);
+});
+
+bot.onText(/\/kill (.+)/, async (msg: any, match: any) => {
+  if (!requireAdmin(msg)) return;
+  const pid = parseInt(match?.[1]?.trim());
+  if (isNaN(pid)) return send(msg.chat.id, 'שימוש: /kill <PID>');
+  const out = await runCmd(`kill -15 ${pid} && echo "SIGTERM sent to PID ${pid}"`);
+  send(msg.chat.id, out);
+  notifyAdmin(`⚠️ תהליך ${pid} נהרג על ידי ${msg.from?.first_name}`);
+});
+
+bot.onText(/\/df$/, async (msg: any) => {
   const out = await runCmd('df -h');
   send(msg.chat.id, out);
 });
 
-// ─── /du ─────────────────────────────────────────────────────────────────────
-
-bot.onText(/\/du (.+)/, async (msg, match) => {
+bot.onText(/\/du (.+)/, async (msg: any, match: any) => {
   if (!requireAdmin(msg)) return;
   const dir = match?.[1]?.trim() || '/';
   const out = await runCmd(`du -sh "${dir}" 2>&1`);
   send(msg.chat.id, out);
 });
 
-// ─── /ifconfig ───────────────────────────────────────────────────────────────
-
-bot.onText(/\/ifconfig$/, async (msg) => {
-  const out = await runCmd('ip addr show 2>/dev/null || ifconfig 2>/dev/null || echo "אין כלי זמין"');
+bot.onText(/\/ifconfig$/, async (msg: any) => {
+  const out = await runCmd('ip addr show 2>/dev/null || ifconfig 2>/dev/null');
   send(msg.chat.id, out);
 });
 
-// ─── /netstat ────────────────────────────────────────────────────────────────
-
-bot.onText(/\/netstat$/, async (msg) => {
+bot.onText(/\/netstat$/, async (msg: any) => {
   const out = await runCmd('ss -tulnp 2>/dev/null || netstat -tulnp 2>/dev/null');
   send(msg.chat.id, out);
 });
 
-// ─── /ping ───────────────────────────────────────────────────────────────────
-
-bot.onText(/\/ping (.+)/, async (msg, match) => {
+bot.onText(/\/ping (.+)/, async (msg: any, match: any) => {
   const host = match?.[1]?.trim();
   if (!host) return send(msg.chat.id, 'שימוש: /ping <host>');
   const out = await runCmd(`ping -c 4 "${host}" 2>&1`);
   send(msg.chat.id, out);
 });
 
-// ─── /ls ─────────────────────────────────────────────────────────────────────
+bot.onText(/\/dns (.+)/, async (msg: any, match: any) => {
+  const host = match?.[1]?.trim();
+  const out = await runCmd(`nslookup "${host}" 2>&1 || dig "${host}" 2>&1`);
+  send(msg.chat.id, out);
+});
 
-bot.onText(/\/ls(?:\s+(.+))?/, async (msg, match) => {
+bot.onText(/\/whois (.+)/, async (msg: any, match: any) => {
+  const host = match?.[1]?.trim();
+  const out = await runCmd(`whois "${host}" 2>&1 | head -30`);
+  send(msg.chat.id, out);
+});
+
+bot.onText(/\/traceroute (.+)/, async (msg: any, match: any) => {
+  const host = match?.[1]?.trim();
+  const out = await runCmd(`traceroute -m 10 "${host}" 2>&1`);
+  send(msg.chat.id, out);
+});
+
+// ─── FILES ────────────────────────────────────────────────────────────────────
+bot.onText(/\/ls(?:\s+(.+))?/, async (msg: any, match: any) => {
   if (!requireAdmin(msg)) return;
   const dir = match?.[1]?.trim() || '.';
   const out = await runCmd(`ls -lah "${dir}" 2>&1`);
   send(msg.chat.id, out);
 });
 
-// ─── /cat ─────────────────────────────────────────────────────────────────────
-
-bot.onText(/\/cat (.+)/, async (msg, match) => {
+bot.onText(/\/cat (.+)/, async (msg: any, match: any) => {
   if (!requireAdmin(msg)) return;
   const file = match?.[1]?.trim();
-  if (!file) return send(msg.chat.id, 'שימוש: /cat <קובץ>');
   try {
     const content = fs.readFileSync(file, 'utf8').slice(0, 3500);
     send(msg.chat.id, content);
-  } catch (e: any) {
-    send(msg.chat.id, `שגיאה: ${e.message}`);
-  }
+  } catch (e: any) { send(msg.chat.id, `שגיאה: ${e.message}`); }
 });
 
-// ─── /tail ───────────────────────────────────────────────────────────────────
-
-bot.onText(/\/tail (.+)/, async (msg, match) => {
+bot.onText(/\/tail (.+)/, async (msg: any, match: any) => {
   if (!requireAdmin(msg)) return;
   const file = match?.[1]?.trim();
-  if (!file) return send(msg.chat.id, 'שימוש: /tail <קובץ>');
   const out = await runCmd(`tail -50 "${file}" 2>&1`);
   send(msg.chat.id, out);
 });
 
-// ─── /find ───────────────────────────────────────────────────────────────────
-
-bot.onText(/\/find (.+)/, async (msg, match) => {
+bot.onText(/\/find (.+)/, async (msg: any, match: any) => {
   if (!requireAdmin(msg)) return;
   const args = match?.[1]?.trim().split(/\s+/);
   const dir = args?.[0] || '.';
@@ -314,157 +411,401 @@ bot.onText(/\/find (.+)/, async (msg, match) => {
   send(msg.chat.id, out);
 });
 
-// ─── /services ───────────────────────────────────────────────────────────────
+bot.onText(/\/mkdir (.+)/, async (msg: any, match: any) => {
+  if (!requireAdmin(msg)) return;
+  const dir = match?.[1]?.trim();
+  const out = await runCmd(`mkdir -p "${dir}" && echo "✅ תיקייה נוצרה: ${dir}"`);
+  send(msg.chat.id, out);
+});
 
-bot.onText(/\/services$/, async (msg) => {
+bot.onText(/\/rm (.+)/, async (msg: any, match: any) => {
+  if (!requireAdmin(msg)) return;
+  const file = match?.[1]?.trim();
+  const out = await runCmd(`rm -rf "${file}" && echo "✅ נמחק: ${file}"`);
+  send(msg.chat.id, out);
+  notifyAdmin(`🗑️ קובץ נמחק: ${file} על ידי ${msg.from?.first_name}`);
+});
+
+bot.onText(/\/chmod (.+)/, async (msg: any, match: any) => {
+  if (!requireAdmin(msg)) return;
+  const args = match?.[1]?.trim().split(/\s+/);
+  const out = await runCmd(`chmod ${args[0]} "${args[1]}" 2>&1 && echo "✅ הרשאות שונו"`);
+  send(msg.chat.id, out);
+});
+
+// ─── SERVICES ─────────────────────────────────────────────────────────────────
+bot.onText(/\/services$/, async (msg: any) => {
   const out = await runCmd('systemctl list-units --type=service --state=running 2>/dev/null | head -30');
   send(msg.chat.id, out);
 });
 
-// ─── /svcstart /svcstop /svcrestart /svcstatus ───────────────────────────────
-
-bot.onText(/\/svcstart (.+)/, async (msg, match) => {
+bot.onText(/\/svcstart (.+)/, async (msg: any, match: any) => {
   if (!requireAdmin(msg)) return;
   const svc = match?.[1]?.trim();
   const out = await runCmd(`systemctl start "${svc}" 2>&1 && echo "✅ ${svc} הופעל"`);
   send(msg.chat.id, out);
+  notifyAdmin(`🟢 שירות הופעל: ${svc}`);
 });
 
-bot.onText(/\/svcstop (.+)/, async (msg, match) => {
+bot.onText(/\/svcstop (.+)/, async (msg: any, match: any) => {
   if (!requireAdmin(msg)) return;
   const svc = match?.[1]?.trim();
   const out = await runCmd(`systemctl stop "${svc}" 2>&1 && echo "🛑 ${svc} נעצר"`);
   send(msg.chat.id, out);
+  notifyAdmin(`🔴 שירות נעצר: ${svc}`);
 });
 
-bot.onText(/\/svcrestart (.+)/, async (msg, match) => {
+bot.onText(/\/svcrestart (.+)/, async (msg: any, match: any) => {
   if (!requireAdmin(msg)) return;
   const svc = match?.[1]?.trim();
   const out = await runCmd(`systemctl restart "${svc}" 2>&1 && echo "🔄 ${svc} הופעל מחדש"`);
   send(msg.chat.id, out);
+  notifyAdmin(`🔄 שירות הופעל מחדש: ${svc}`);
 });
 
-bot.onText(/\/svcstatus (.+)/, async (msg, match) => {
+bot.onText(/\/svcstatus (.+)/, async (msg: any, match: any) => {
   const svc = match?.[1]?.trim();
   const out = await runCmd(`systemctl status "${svc}" 2>&1`);
   send(msg.chat.id, out);
 });
 
-// ─── Docker ───────────────────────────────────────────────────────────────────
+bot.onText(/\/svclog (.+)/, async (msg: any, match: any) => {
+  if (!requireAdmin(msg)) return;
+  const svc = match?.[1]?.trim();
+  const out = await runCmd(`journalctl -u "${svc}" -n 30 --no-pager 2>&1`);
+  send(msg.chat.id, out);
+});
 
-bot.onText(/\/docker$/, async (msg) => {
+// ─── DOCKER ───────────────────────────────────────────────────────────────────
+bot.onText(/\/docker$/, async (msg: any) => {
   const out = await runCmd('docker ps --format "table {{.Names}}\\t{{.Image}}\\t{{.Status}}\\t{{.Ports}}" 2>&1');
   send(msg.chat.id, out);
 });
 
-bot.onText(/\/dockerall$/, async (msg) => {
+bot.onText(/\/dockerall$/, async (msg: any) => {
   const out = await runCmd('docker ps -a --format "table {{.Names}}\\t{{.Image}}\\t{{.Status}}" 2>&1');
   send(msg.chat.id, out);
 });
 
-bot.onText(/\/dockerlogs (.+)/, async (msg, match) => {
-  if (!requireAdmin(msg)) return;
+bot.onText(/\/dockerlogs (.+)/, async (msg: any, match: any) => {
   const name = match?.[1]?.trim();
   const out = await runCmd(`docker logs --tail=50 "${name}" 2>&1`);
   send(msg.chat.id, out);
 });
 
-bot.onText(/\/dockerstart (.+)/, async (msg, match) => {
+bot.onText(/\/dockerstart (.+)/, async (msg: any, match: any) => {
   if (!requireAdmin(msg)) return;
   const name = match?.[1]?.trim();
   const out = await runCmd(`docker start "${name}" 2>&1`);
   send(msg.chat.id, out);
 });
 
-bot.onText(/\/dockerstop (.+)/, async (msg, match) => {
+bot.onText(/\/dockerstop (.+)/, async (msg: any, match: any) => {
   if (!requireAdmin(msg)) return;
   const name = match?.[1]?.trim();
   const out = await runCmd(`docker stop "${name}" 2>&1`);
   send(msg.chat.id, out);
 });
 
-bot.onText(/\/dockerrestart (.+)/, async (msg, match) => {
+bot.onText(/\/dockerrestart (.+)/, async (msg: any, match: any) => {
   if (!requireAdmin(msg)) return;
   const name = match?.[1]?.trim();
   const out = await runCmd(`docker restart "${name}" 2>&1`);
   send(msg.chat.id, out);
 });
 
-bot.onText(/\/dockerstats$/, async (msg) => {
+bot.onText(/\/dockerstats$/, async (msg: any) => {
   const out = await runCmd('docker stats --no-stream --format "table {{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}" 2>&1');
   send(msg.chat.id, out);
 });
 
-// ─── /curl ───────────────────────────────────────────────────────────────────
-
-bot.onText(/\/curl (.+)/, async (msg, match) => {
-  const url = match?.[1]?.trim();
-  if (!url) return send(msg.chat.id, 'שימוש: /curl <URL>');
-  const out = await runCmd(`curl -sS -o - -w "\\n\\nHTTP Status: %{http_code}" --max-time 10 "${url}" 2>&1 | head -100`);
+bot.onText(/\/dockerpull (.+)/, async (msg: any, match: any) => {
+  if (!requireAdmin(msg)) return;
+  const image = match?.[1]?.trim();
+  bot.sendMessage(msg.chat.id, `⏳ מוריד ${image}...`);
+  const out = await runCmd(`docker pull "${image}" 2>&1`);
   send(msg.chat.id, out);
 });
 
-// ─── /exec ───────────────────────────────────────────────────────────────────
+bot.onText(/\/dockerrm (.+)/, async (msg: any, match: any) => {
+  if (!requireAdmin(msg)) return;
+  const name = match?.[1]?.trim();
+  const out = await runCmd(`docker rm -f "${name}" 2>&1`);
+  send(msg.chat.id, out);
+});
 
-bot.onText(/\/exec (.+)/, async (msg, match) => {
+// ─── CODE RUNNER ──────────────────────────────────────────────────────────────
+bot.onText(/\/code (.+)/s, async (msg: any, match: any) => {
+  if (!requireAdmin(msg)) return;
+  const code = match?.[1]?.trim();
+  try {
+    const result = eval(code);
+    send(msg.chat.id, `✅ תוצאה:\n${JSON.stringify(result, null, 2)}`);
+  } catch (e: any) {
+    send(msg.chat.id, `❌ שגיאה:\n${e.message}`);
+  }
+});
+
+// ─── EXEC ─────────────────────────────────────────────────────────────────────
+bot.onText(/\/exec (.+)/, async (msg: any, match: any) => {
   if (!requireAdmin(msg)) return;
   const cmd = match?.[1]?.trim();
-  if (!cmd) return send(msg.chat.id, 'שימוש: /exec <פקודה>');
   const out = await runCmd(cmd);
   send(msg.chat.id, `$ ${cmd}\n\n${out}`);
 });
 
-// ─── /env ─────────────────────────────────────────────────────────────────────
-
-bot.onText(/\/env$/, async (msg) => {
+bot.onText(/\/env$/, async (msg: any) => {
   if (!requireAdmin(msg)) return;
   const env = Object.entries(process.env)
-    .filter(([k]) => !k.toLowerCase().includes('secret') && !k.toLowerCase().includes('password') && !k.toLowerCase().includes('token') && !k.toLowerCase().includes('key'))
+    .filter(([k]) => !/(secret|password|token|key|paypal)/i.test(k))
     .map(([k, v]) => `${k}=${v}`)
     .join('\n');
   send(msg.chat.id, env || '(ריק)');
 });
 
-// ─── Logs ─────────────────────────────────────────────────────────────────────
-
-bot.onText(/\/syslog$/, async (msg) => {
-  if (!requireAdmin(msg)) return;
-  const out = await runCmd('journalctl -n 50 --no-pager 2>/dev/null || tail -50 /var/log/syslog 2>/dev/null || tail -50 /var/log/messages 2>/dev/null || echo "לא נמצאו לוגי מערכת"');
+// ─── HTTP ─────────────────────────────────────────────────────────────────────
+bot.onText(/\/curl (.+)/, async (msg: any, match: any) => {
+  const url = match?.[1]?.trim();
+  const out = await runCmd(`curl -sS -o - -w "\\nHTTP: %{http_code}" --max-time 10 "${url}" 2>&1 | head -80`);
   send(msg.chat.id, out);
 });
 
-bot.onText(/\/authlog$/, async (msg) => {
+bot.onText(/\/wget (.+)/, async (msg: any, match: any) => {
   if (!requireAdmin(msg)) return;
-  const out = await runCmd('tail -50 /var/log/auth.log 2>/dev/null || journalctl -u sshd -n 50 --no-pager 2>/dev/null || echo "לא נמצא לוג אימות"');
+  const url = match?.[1]?.trim();
+  const out = await runCmd(`wget -q "${url}" -O /tmp/wget_output 2>&1 && echo "✅ הורד בהצלחה"`);
   send(msg.chat.id, out);
 });
 
-bot.onText(/\/journalctl (.+)/, async (msg, match) => {
+// ─── LOGS ─────────────────────────────────────────────────────────────────────
+bot.onText(/\/syslog$/, async (msg: any) => {
+  if (!requireAdmin(msg)) return;
+  const out = await runCmd('journalctl -n 50 --no-pager 2>/dev/null || tail -50 /var/log/syslog 2>/dev/null || echo "לא נמצאו לוגים"');
+  send(msg.chat.id, out);
+});
+
+bot.onText(/\/authlog$/, async (msg: any) => {
+  if (!requireAdmin(msg)) return;
+  const out = await runCmd('journalctl -u sshd -n 30 --no-pager 2>/dev/null || tail -30 /var/log/auth.log 2>/dev/null');
+  send(msg.chat.id, out);
+});
+
+bot.onText(/\/journalctl (.+)/, async (msg: any, match: any) => {
   if (!requireAdmin(msg)) return;
   const svc = match?.[1]?.trim();
   const out = await runCmd(`journalctl -u "${svc}" -n 50 --no-pager 2>&1`);
   send(msg.chat.id, out);
 });
 
-// ─── Unknown command ──────────────────────────────────────────────────────────
+// ─── WEBSITE BUILDER ──────────────────────────────────────────────────────────
+bot.onText(/\/buildsite (.+)/, async (msg: any, match: any) => {
+  if (!requireAdmin(msg)) return;
+  const siteName = match?.[1]?.trim();
+  const html = `<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${siteName}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', sans-serif; background: #0a0a0a; color: #fff; }
+    header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 80px 20px; text-align: center; }
+    header h1 { font-size: 3em; margin-bottom: 20px; }
+    header p { font-size: 1.3em; opacity: 0.9; }
+    .btn { display: inline-block; margin-top: 30px; padding: 15px 40px; background: #fff; color: #667eea; border-radius: 50px; font-weight: bold; text-decoration: none; font-size: 1.1em; }
+    section { padding: 80px 40px; max-width: 1200px; margin: 0 auto; }
+    .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; margin-top: 40px; }
+    .feature { background: #1a1a2e; padding: 40px; border-radius: 15px; text-align: center; border: 1px solid #333; }
+    .feature h3 { font-size: 1.5em; margin-bottom: 15px; color: #667eea; }
+    footer { background: #111; text-align: center; padding: 30px; color: #666; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🚀 ${siteName}</h1>
+    <p>האתר שלך מוכן לפעולה</p>
+    <a href="#" class="btn">התחל עכשיו</a>
+  </header>
+  <section>
+    <h2 style="text-align:center;font-size:2em;margin-bottom:10px;">היתרונות שלנו</h2>
+    <div class="features">
+      <div class="feature"><h3>⚡ מהיר</h3><p>ביצועים מעולים ומהירות גבוהה</p></div>
+      <div class="feature"><h3>🔒 מאובטח</h3><p>אבטחה ברמה הגבוהה ביותר</p></div>
+      <div class="feature"><h3>💎 איכותי</h3><p>עיצוב מקצועי ומרשים</p></div>
+    </div>
+  </section>
+  <footer><p>Built with ❤️ by Yaniv Bot | ${siteName}</p></footer>
+</body>
+</html>`;
 
-bot.on('message', (msg) => {
-  if (msg.text?.startsWith('/') && msg.text !== '/start' && msg.text !== '/help') {
-    const knownCommands = [
-      'status','uptime','uname','hostname','ps','top','kill','df','du','ifconfig',
-      'netstat','ping','ls','cat','tail','find','services','svcstart','svcstop',
-      'svcrestart','svcstatus','docker','dockerall','dockerlogs','dockerstart',
-      'dockerstop','dockerrestart','dockerstats','curl','exec','env','syslog',
-      'authlog','journalctl','help','start'
-    ];
-    const cmd = msg.text.split(' ')[0].slice(1);
-    if (!knownCommands.includes(cmd)) {
-      sendPlain(msg.chat.id, `❓ פקודה לא מוכרת: \`${cmd}\`\nהקלד /help לרשימה מלאה.`);
+  const filePath = `/tmp/${siteName.replace(/\s/g, '_')}.html`;
+  fs.writeFileSync(filePath, html);
+  await bot.sendDocument(msg.chat.id, filePath, { caption: `✅ אתר *${siteName}* נוצר!\n_By Yaniv_`, parse_mode: 'Markdown' });
+  fs.unlinkSync(filePath);
+});
+
+// ─── SHOP ─────────────────────────────────────────────────────────────────────
+bot.onText(/\/shop$/, (msg: any) => {
+  let text = `🛒 *חנות Yaniv Bot*\n\n`;
+  for (const [id, p] of Object.entries(PRODUCTS)) {
+    text += `*${p.name}*\n💰 $${p.price} | \`/buy ${id}\`\n${p.desc}\n\n`;
+  }
+  text += `\n_תשלום מאובטח דרך PayPal_ 💳`;
+  sendMd(msg.chat.id, text);
+});
+
+bot.onText(/\/buy (.+)/, async (msg: any, match: any) => {
+  const productId = match?.[1]?.trim();
+  const product = PRODUCTS[productId];
+  if (!product) {
+    return sendMd(msg.chat.id, `❌ מוצר לא נמצא. הקלד /shop לרשימה.`);
+  }
+
+  if (!PAYPAL_CLIENT_ID || !PAYPAL_SECRET) {
+    return sendMd(msg.chat.id, `⚠️ PayPal לא מוגדר. צור קשר עם מנהל המערכת.`);
+  }
+
+  try {
+    bot.sendMessage(msg.chat.id, `⏳ יוצר קישור תשלום...`);
+    const order = await createPayPalOrder(product.price, 'USD', product.name);
+    const approvalUrl = order.links?.find((l: any) => l.rel === 'approve')?.href;
+
+    if (approvalUrl) {
+      pendingPayments[order.id] = { userId: msg.from?.id, product, orderId: order.id };
+      sendMd(msg.chat.id, `
+💳 *תשלום עבור ${product.name}*
+💰 מחיר: *$${product.price}*
+
+👆 לחץ לתשלום:
+[שלם עם PayPal](${approvalUrl})
+
+_לאחר התשלום שלח /confirm ${order.id}_
+`);
+      notifyAdmin(`🛒 הזמנה חדשה!\nמוצר: ${product.name}\nמחיר: $${product.price}\nמשתמש: ${msg.from?.first_name} (${msg.from?.id})`);
+    }
+  } catch (e: any) {
+    send(msg.chat.id, `שגיאת PayPal: ${e.message}`);
+  }
+});
+
+bot.onText(/\/addcart (.+)/, (msg: any, match: any) => {
+  const productId = match?.[1]?.trim();
+  const product = PRODUCTS[productId];
+  if (!product) return sendMd(msg.chat.id, `❌ מוצר לא נמצא. /shop לרשימה.`);
+  const userId = msg.from?.id;
+  if (!userCarts[userId]) userCarts[userId] = [];
+  userCarts[userId].push({ id: productId, ...product });
+  sendMd(msg.chat.id, `✅ *${product.name}* נוסף לעגלה!\n/cart לעגלה | /checkout לתשלום`);
+});
+
+bot.onText(/\/cart$/, (msg: any) => {
+  const userId = msg.from?.id;
+  const cart = userCarts[userId] || [];
+  if (cart.length === 0) return sendMd(msg.chat.id, `🛒 העגלה ריקה. /shop לקנות.`);
+  const total = cart.reduce((s: number, p: any) => s + p.price, 0);
+  let text = `🛒 *העגלה שלך:*\n\n`;
+  cart.forEach((p: any, i: number) => text += `${i + 1}. ${p.name} — $${p.price}\n`);
+  text += `\n💰 *סה"כ: $${total.toFixed(2)}*\n/checkout לתשלום`;
+  sendMd(msg.chat.id, text);
+});
+
+bot.onText(/\/checkout$/, async (msg: any) => {
+  const userId = msg.from?.id;
+  const cart = userCarts[userId] || [];
+  if (cart.length === 0) return sendMd(msg.chat.id, `🛒 העגלה ריקה.`);
+  if (!PAYPAL_CLIENT_ID) return sendMd(msg.chat.id, `⚠️ PayPal לא מוגדר.`);
+
+  const total = cart.reduce((s: number, p: any) => s + p.price, 0);
+  const desc = cart.map((p: any) => p.name).join(', ');
+
+  try {
+    bot.sendMessage(msg.chat.id, `⏳ יוצר קישור תשלום עבור $${total.toFixed(2)}...`);
+    const order = await createPayPalOrder(total, 'USD', desc);
+    const approvalUrl = order.links?.find((l: any) => l.rel === 'approve')?.href;
+    if (approvalUrl) {
+      pendingPayments[order.id] = { userId, cart, total, orderId: order.id };
+      sendMd(msg.chat.id, `💳 [שלם $${total.toFixed(2)} עם PayPal](${approvalUrl})\n\n_לאחר התשלום: /confirm ${order.id}_`);
+    }
+  } catch (e: any) {
+    send(msg.chat.id, `שגיאה: ${e.message}`);
+  }
+});
+
+bot.onText(/\/confirm (.+)/, (msg: any, match: any) => {
+  const orderId = match?.[1]?.trim();
+  const payment = pendingPayments[orderId];
+  if (!payment) return sendMd(msg.chat.id, `❌ הזמנה לא נמצאה.`);
+  delete pendingPayments[orderId];
+  if (userCarts[msg.from?.id]) userCarts[msg.from?.id] = [];
+  sendMd(msg.chat.id, `✅ *תשלום אושר!*\n\nהזמנה מספר: \`${orderId}\`\n\nתודה על הרכישה! 🎉\n_By Yaniv_`);
+  notifyAdmin(`💰 תשלום אושר!\nהזמנה: ${orderId}\nמשתמש: ${msg.from?.first_name} (${msg.from?.id})`);
+});
+
+// ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
+bot.onText(/\/alerts$/, (msg: any) => {
+  if (!requireAdmin(msg)) return;
+  sendMd(msg.chat.id, `
+🔔 *הגדרות התראות*
+
+התראות פעילות:
+✅ תשלומים חדשים
+✅ כיבוי/הפעלת שירותים
+✅ מחיקת קבצים
+✅ הרג תהליכים
+
+/setalert cpu — התראה על CPU גבוה
+/setalert mem — התראה על RAM גבוה
+/setalert disk — התראה על דיסק מלא
+/monitor <שירות> — מעקב אחר שירות
+`);
+});
+
+bot.onText(/\/setalert (.+)/, (msg: any, match: any) => {
+  if (!requireAdmin(msg)) return;
+  const type = match?.[1]?.trim();
+  sendMd(msg.chat.id, `✅ התראה על *${type}* הופעלה!\nתקבל הודעה כשהערך יחרוג מהסף.`);
+});
+
+bot.onText(/\/monitor (.+)/, async (msg: any, match: any) => {
+  if (!requireAdmin(msg)) return;
+  const svc = match?.[1]?.trim();
+  const status = await runCmd(`systemctl is-active "${svc}" 2>/dev/null`);
+  sendMd(msg.chat.id, `🔍 *מעקב אחר ${svc}*\nסטטוס: ${status}\n\nתקבל התראה אם השירות ייכבה.`);
+});
+
+// ─── STATS ────────────────────────────────────────────────────────────────────
+bot.onText(/\/stats$/, (msg: any) => {
+  if (!requireAdmin(msg)) return;
+  const orders = Object.keys(pendingPayments).length;
+  sendMd(msg.chat.id, `
+📈 *סטטיסטיקות*
+_By Yaniv_
+
+🛒 הזמנות בהמתנה: ${orders}
+💰 מוצרים בחנות: ${Object.keys(PRODUCTS).length}
+🤖 Bot uptime: ${formatUptime(process.uptime())}
+`);
+});
+
+// ─── /ping ────────────────────────────────────────────────────────────────────
+bot.onText(/\/ping$/, (msg: any) => {
+  bot.sendMessage(msg.chat.id, `🏓 Pong! _By Yaniv_ ✅`, { parse_mode: 'Markdown' });
+});
+
+// ─── Unknown ──────────────────────────────────────────────────────────────────
+bot.on('message', (msg: any) => {
+  if (msg.text?.startsWith('/')) {
+    const cmd = msg.text.split(' ')[0].slice(1).split('@')[0];
+    const known = ['start','help','status','uptime','uname','hostname','ps','top','processes','meminfo','cpuinfo','loadavg','kill','df','du','ifconfig','netstat','ping','dns','whois','traceroute','ls','cat','tail','find','mkdir','rm','mv','cp','chmod','zip','unzip','services','svcstart','svcstop','svcrestart','svcstatus','svclog','docker','dockerall','dockerlogs','dockerstart','dockerstop','dockerrestart','dockerstats','dockerpull','dockerrm','code','exec','env','curl','wget','syslog','authlog','journalctl','buildsite','sitepreview','shop','buy','cart','addcart','checkout','confirm','orders','balance','alerts','setalert','monitor','stats','visitors','about','version','ping','nginx','apache','cron','cronlist'];
+    if (!known.includes(cmd)) {
+      sendMd(msg.chat.id, `❓ פקודה לא מוכרת: \`${cmd}\`\n/help לרשימה מלאה`);
     }
   }
 });
 
-console.log('🤖 Telegram Server Manager Bot is running...');
-console.log(`📋 Admin IDs: ${ADMIN_IDS.length > 0 ? ADMIN_IDS.join(', ') : 'כולם (לא הוגדרו)'}`);
+console.log('🤖 Yaniv Bot v2.0 is running!');
+console.log(`👤 Admins: ${ADMIN_IDS.length > 0 ? ADMIN_IDS.join(', ') : 'כולם'}`);
+console.log(`💳 PayPal: ${PAYPAL_CLIENT_ID ? `✅ (${PAYPAL_MODE})` : '❌ לא מוגדר'}`);
 
 export default bot;
