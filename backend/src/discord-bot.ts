@@ -199,6 +199,13 @@ const commands = [
   new SlashCommandBuilder().setName('kill').setDescription('הרוג תהליך').addIntegerOption(o=>o.setName('pid').setDescription('PID').setRequired(true)),
   new SlashCommandBuilder().setName('pinghost').setDescription('Ping לhost').addStringOption(o=>o.setName('host').setDescription('כתובת').setRequired(true)),
 
+  // FINANCE & MARKET
+  new SlashCommandBuilder().setName('stock').setDescription('📈 מחיר מניה בזמן אמת').addStringOption(o=>o.setName('symbol').setDescription('סימול (לדוגמה: AAPL, TSLA, GOOGL)').setRequired(true)),
+  new SlashCommandBuilder().setName('crypto').setDescription('💰 מחיר קריפטו בזמן אמת').addStringOption(o=>o.setName('coin').setDescription('מטבע (לדוגמה: bitcoin, ethereum, solana)').setRequired(true)),
+  new SlashCommandBuilder().setName('profit').setDescription('💹 מחשבון רווח Etsy').addNumberOption(o=>o.setName('cost').setDescription('עלות ייצור ($)').setRequired(true)).addNumberOption(o=>o.setName('price').setDescription('מחיר מכירה ($)').setRequired(true)).addNumberOption(o=>o.setName('shipping').setDescription('משלוח ($)').setRequired(false)),
+  new SlashCommandBuilder().setName('currency').setDescription('💱 המרת מטבע').addNumberOption(o=>o.setName('amount').setDescription('סכום').setRequired(true)).addStringOption(o=>o.setName('from').setDescription('ממטבע (USD/ILS/EUR)').setRequired(true)).addStringOption(o=>o.setName('to').setDescription('למטבע (USD/ILS/EUR)').setRequired(true)),
+  new SlashCommandBuilder().setName('etsy-search').setDescription('🛍️ חפש מוצרים ב-Etsy ומחירים').addStringOption(o=>o.setName('keyword').setDescription('מה לחפש').setRequired(true)),
+
   // SHOP
   new SlashCommandBuilder().setName('shop').setDescription('חנות מוצרים'),
   new SlashCommandBuilder().setName('buy').setDescription('רכישת מוצר').addStringOption(o=>o.setName('product').setDescription('מזהה').setRequired(true)),
@@ -887,6 +894,159 @@ if (commandName === 'uptime') {
   }
 
   // ══════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════
+  //  FINANCE & MARKET COMMANDS
+  // ══════════════════════════════════════════════════════
+
+  if (commandName === 'stock') {
+    const symbol = interaction.options.getString('symbol').toUpperCase();
+    try {
+      const res = await axios.get(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      });
+      const meta = res.data?.chart?.result?.[0]?.meta;
+      if (!meta) return interaction.editReply({embeds:[errEmbed(`לא נמצאה מניה: ${symbol}`)]});
+
+      const price = meta.regularMarketPrice;
+      const prev = meta.previousClose || meta.chartPreviousClose;
+      const change = price - prev;
+      const changePct = ((change / prev) * 100).toFixed(2);
+      const isUp = change >= 0;
+      const color = isUp ? 0x2ecc71 : 0xe74c3c;
+      const arrow = isUp ? '📈' : '📉';
+
+      return interaction.editReply({embeds:[new EmbedBuilder()
+        .setTitle(`${arrow} ${symbol} — ${meta.longName || meta.shortName || symbol}`)
+        .setColor(color)
+        .addFields(
+          {name:'💵 מחיר', value:`**$${price?.toFixed(2)}**`, inline:true},
+          {name:'📊 שינוי', value:`${isUp?'+':''}${change?.toFixed(2)} (${isUp?'+':''}${changePct}%)`, inline:true},
+          {name:'📅 סגירה אתמול', value:`$${prev?.toFixed(2)}`, inline:true},
+          {name:'📉 שפל יומי', value:`$${meta.regularMarketDayLow?.toFixed(2)||'N/A'}`, inline:true},
+          {name:'📈 שיא יומי', value:`$${meta.regularMarketDayHigh?.toFixed(2)||'N/A'}`, inline:true},
+          {name:'💹 נפח מסחר', value:meta.regularMarketVolume?.toLocaleString()||'N/A', inline:true},
+        )
+        .setFooter({text:'מקור: Yahoo Finance | עדכון בזמן אמת'})
+        .setTimestamp()
+      ]});
+    } catch(e:any) {
+      return interaction.editReply({embeds:[errEmbed(`שגיאה בטעינת מניה ${symbol}: ${e.message}`)]});
+    }
+  }
+
+  if (commandName === 'crypto') {
+    const coin = interaction.options.getString('coin').toLowerCase();
+    try {
+      const res = await axios.get(`https://api.coingecko.com/api/v3/simple/price?ids=${coin}&vs_currencies=usd,ils&include_24hr_change=true&include_market_cap=true`);
+      const data = res.data?.[coin];
+      if (!data) return interaction.editReply({embeds:[errEmbed(`מטבע לא נמצא: ${coin}`)]});
+
+      const price = data.usd;
+      const change = data.usd_24h_change?.toFixed(2);
+      const isUp = change >= 0;
+      const marketCap = data.usd_market_cap ? `$${(data.usd_market_cap/1e9).toFixed(2)}B` : 'N/A';
+
+      return interaction.editReply({embeds:[new EmbedBuilder()
+        .setTitle(`${isUp?'🟢':'🔴'} ${coin.charAt(0).toUpperCase()+coin.slice(1)}`)
+        .setColor(isUp ? 0x2ecc71 : 0xe74c3c)
+        .addFields(
+          {name:'💵 מחיר USD', value:`**$${price?.toLocaleString()}**`, inline:true},
+          {name:'🪙 מחיר ILS', value:`**₪${data.ils?.toLocaleString()}**`, inline:true},
+          {name:'📊 שינוי 24h', value:`${isUp?'+':''}${change}%`, inline:true},
+          {name:'🏦 שווי שוק', value:marketCap, inline:true},
+        )
+        .setFooter({text:'מקור: CoinGecko'})
+        .setTimestamp()
+      ]});
+    } catch(e:any) {
+      return interaction.editReply({embeds:[errEmbed(`שגיאה: ${e.message}`)]});
+    }
+  }
+
+  if (commandName === 'profit') {
+    const cost = interaction.options.getNumber('cost');
+    const price = interaction.options.getNumber('price');
+    const shipping = interaction.options.getNumber('shipping') || 0;
+    const etsyFee = price * 0.065; // Etsy 6.5% transaction fee
+    const listingFee = 0.20; // Etsy listing fee
+    const paymentFee = price * 0.03 + 0.25; // Payment processing
+    const totalFees = etsyFee + listingFee + paymentFee + shipping;
+    const profit = price - cost - totalFees;
+    const margin = ((profit / price) * 100).toFixed(1);
+    const isGood = profit > 0;
+
+    return interaction.editReply({embeds:[new EmbedBuilder()
+      .setTitle('💹 מחשבון רווח Etsy')
+      .setColor(isGood ? 0x2ecc71 : 0xe74c3c)
+      .addFields(
+        {name:'💰 מחיר מכירה', value:`$${price.toFixed(2)}`, inline:true},
+        {name:'🏭 עלות ייצור', value:`$${cost.toFixed(2)}`, inline:true},
+        {name:'📦 משלוח', value:`$${shipping.toFixed(2)}`, inline:true},
+        {name:'📊 עמלת Etsy (6.5%)', value:`$${etsyFee.toFixed(2)}`, inline:true},
+        {name:'💳 עמלת תשלום', value:`$${paymentFee.toFixed(2)}`, inline:true},
+        {name:'📋 עמלת רישום', value:`$${listingFee.toFixed(2)}`, inline:true},
+        {name:isGood?'✅ רווח נקי':'❌ הפסד', value:`**$${profit.toFixed(2)}** (${margin}%)`, inline:false},
+      )
+      .setFooter({text:'כולל עמלות Etsy רגילות'})
+    ]});
+  }
+
+  if (commandName === 'currency') {
+    const amount = interaction.options.getNumber('amount');
+    const from = interaction.options.getString('from').toUpperCase();
+    const to = interaction.options.getString('to').toUpperCase();
+    try {
+      const res = await axios.get(`https://api.exchangerate-api.com/v4/latest/${from}`);
+      const rate = res.data?.rates?.[to];
+      if (!rate) return interaction.editReply({embeds:[errEmbed(`מטבע לא נמצא: ${to}`)]});
+      const result = (amount * rate).toFixed(2);
+      return interaction.editReply({embeds:[new EmbedBuilder()
+        .setTitle('💱 המרת מטבע')
+        .setColor(0x3498db)
+        .setDescription(`**${amount.toLocaleString()} ${from}** = **${Number(result).toLocaleString()} ${to}**`)
+        .addFields({name:'שער חליפין', value:`1 ${from} = ${rate.toFixed(4)} ${to}`, inline:true})
+        .setTimestamp()
+      ]});
+    } catch(e:any) {
+      return interaction.editReply({embeds:[errEmbed(`שגיאה: ${e.message}`)]});
+    }
+  }
+
+  if (commandName === 'etsy-search') {
+    const keyword = interaction.options.getString('keyword');
+    try {
+      const res = await axios.get(`https://openapi.etsy.com/v3/application/listings/active`, {
+        params: { keywords: keyword, limit: 5, sort_on: 'score' },
+        headers: { 'x-api-key': process.env.ETSY_API_KEY || '' }
+      });
+      const listings = res.data?.results || [];
+      if (!listings.length) return interaction.editReply({embeds:[errEmbed('לא נמצאו תוצאות')]});
+
+      const prices = listings.map((l:any) => parseFloat(l.price?.amount||'0')/(l.price?.divisor||100));
+      const avgPrice = (prices.reduce((a:number,b:number)=>a+b,0)/prices.length).toFixed(2);
+      const minPrice = Math.min(...prices).toFixed(2);
+      const maxPrice = Math.max(...prices).toFixed(2);
+
+      const e = new EmbedBuilder()
+        .setTitle(`🛍️ Etsy — "${keyword}"`)
+        .setColor(0xf56400)
+        .addFields(
+          {name:'💰 מחיר ממוצע', value:`$${avgPrice}`, inline:true},
+          {name:'📉 הכי זול', value:`$${minPrice}`, inline:true},
+          {name:'📈 הכי יקר', value:`$${maxPrice}`, inline:true},
+        );
+
+      listings.slice(0,3).forEach((l:any, i:number) => {
+        const p = (parseFloat(l.price?.amount||'0')/(l.price?.divisor||100)).toFixed(2);
+        e.addFields({name:`${i+1}. ${l.title?.slice(0,50)||''}`, value:`💵 $${p}`, inline:false});
+      });
+
+      return interaction.editReply({embeds:[e]});
+    } catch(e:any) {
+      return interaction.editReply({embeds:[errEmbed('שגיאה בחיפוש Etsy - בדוק ETSY_API_KEY')]});
+    }
+  }
+
   //  SHOP
   // ══════════════════════════════════════════════════════
   if (commandName === 'shop') {
