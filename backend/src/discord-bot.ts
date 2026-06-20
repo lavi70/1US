@@ -1038,7 +1038,7 @@ client.on('interactionCreate', async (interaction: any) => {
     }
 
     try {
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
       const completion = await model.generateContent(`${systemPrompt}\n\n${prompt}`);
       const response = completion.response.text() || 'שגיאה';
 
@@ -1445,7 +1445,7 @@ client.on('messageCreate', async (message: any) => {
     if (!content) return message.reply('שאל אותי משהו! 🤖').catch(()=>{});
     try {
       message.channel.sendTyping().catch(()=>{});
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
       const completion = await model.generateContent(`אתה עוזר AI חכם בשם Yaniv Bot. ענה בעברית, היה קצר וידידותי.\n\n${content}`);
       const reply = completion.response.text() || '...';
       message.reply(`🤖 **Yaniv AI:** ${reply.slice(0,1900)}`).catch(()=>{});
