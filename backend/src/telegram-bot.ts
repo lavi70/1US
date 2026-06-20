@@ -535,6 +535,10 @@ bot.onText(/\/dockerrm (.+)/, async (msg: any, match: any) => {
 });
 
 // ─── CODE RUNNER ──────────────────────────────────────────────────────────────
+bot.onText(/\/code$/, async (msg: any) => {
+  sendMd(msg.chat.id, `💻 *הרצת קוד JavaScript*\n\nשימוש: \`/code <קוד>\`\n\nדוגמה:\n\`/code 2+2\`\n\`/code Math.PI.toFixed(5)\``);
+});
+
 bot.onText(/\/code (.+)/s, async (msg: any, match: any) => {
   if (!requireAdmin(msg)) return;
   const code = match?.[1]?.trim();
@@ -802,6 +806,18 @@ bot.on('message', (msg: any) => {
       sendMd(msg.chat.id, `❓ פקודה לא מוכרת: \`${cmd}\`\n/help לרשימה מלאה`);
     }
   }
+});
+
+bot.on('polling_error', (err: any) => {
+  console.error('Polling error:', err.message);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err.message);
+});
+
+process.on('unhandledRejection', (reason: any) => {
+  console.error('Unhandled rejection:', reason?.message || reason);
 });
 
 console.log('🤖 Yaniv Bot v2.0 is running!');
