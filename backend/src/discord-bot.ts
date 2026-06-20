@@ -1606,26 +1606,29 @@ if (commandName === 'uptime') {
         const resArr2 = sliceT.map(t => ({x: t*1000, y: parseFloat(resistance.toFixed(2))}));
         const supArr2 = sliceT.map(t => ({x: t*1000, y: parseFloat(support.toFixed(2))}));
 
+        // Labels as date strings (no time axis needed)
+        const dateLabels = sliceT.map(t => {
+          const d = new Date(t * 1000);
+          return `${d.getMonth()+1}/${d.getDate()}`;
+        });
+
         const chartConfig = {
           type: 'candlestick',
           data: {
+            labels: dateLabels,
             datasets: [
               {
                 label: symbol,
                 data: candleData,
-                color: {
-                  up: '#2ecc71',
-                  down: '#e74c3c',
-                  unchanged: '#95a5a6'
-                }
+                color: { up: '#2ecc71', down: '#e74c3c', unchanged: '#95a5a6' }
               },
               {
                 type: 'line',
                 label: `התנגדות $${resistance.toFixed(0)}`,
                 data: resArr2,
                 borderColor: '#e74c3c',
-                borderDash: [5,3],
-                borderWidth: 1.5,
+                borderDash: [5, 3],
+                borderWidth: 2,
                 pointRadius: 0,
                 fill: false
               },
@@ -1634,8 +1637,8 @@ if (commandName === 'uptime') {
                 label: `תמיכה $${support.toFixed(0)}`,
                 data: supArr2,
                 borderColor: '#3498db',
-                borderDash: [5,3],
-                borderWidth: 1.5,
+                borderDash: [5, 3],
+                borderWidth: 2,
                 pointRadius: 0,
                 fill: false
               },
@@ -1643,16 +1646,16 @@ if (commandName === 'uptime') {
                 type: 'bar',
                 label: 'נפח',
                 data: volData,
-                backgroundColor: sliceC.map((c,i) => c >= (sliceO[i]||c) ? 'rgba(46,204,113,0.3)' : 'rgba(231,76,60,0.3)'),
+                backgroundColor: sliceC.map((c, i) => c >= (sliceO[i] || c) ? 'rgba(46,204,113,0.25)' : 'rgba(231,76,60,0.25)'),
                 borderWidth: 0
               }
             ]
           },
           options: {
-            legend: {labels: {fontColor:'#ccc', fontSize:10}},
+            legend: { labels: { fontColor: '#cccccc', fontSize: 11 } },
             scales: {
-              xAxes:[{type:'time', time:{unit:'day', displayFormats:{day:'M/D'}}, ticks:{fontColor:'#aaa', maxTicksLimit:10}, gridLines:{color:'rgba(255,255,255,0.06)'}}],
-              yAxes:[{ticks:{fontColor:'#aaa', callback:'(v)=>"$"+v'}, gridLines:{color:'rgba(255,255,255,0.08)'}}]
+              xAxes: [{ ticks: { fontColor: '#aaaaaa', maxTicksLimit: 10 }, gridLines: { color: 'rgba(255,255,255,0.06)' } }],
+              yAxes: [{ ticks: { fontColor: '#aaaaaa' }, gridLines: { color: 'rgba(255,255,255,0.08)' } }]
             }
           },
           backgroundColor: '#1a1a2e'
