@@ -7,7 +7,8 @@ import {
   Target, RefreshCw, Bell, AlertTriangle, Calendar,
   Repeat, Trophy, PiggyBank, Zap,
   Lock, Unlock, ShieldCheck, LayoutDashboard, Delete,
-  Settings, Upload, FileJson, BarChart as BarChartIcon, Activity, ChevronLeft, ChevronRight
+  Settings, Upload, FileJson, BarChart as BarChartIcon, Activity, ChevronLeft, ChevronRight,
+  Users, UserCheck, UserX, Clock, SlidersHorizontal, Filter
 } from 'lucide-react';
 import {
   PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Legend
@@ -72,6 +73,21 @@ interface Goal {
   color: string;
   deadline?: string;
   emoji: string;
+}
+
+type DebtDirection = 'owe' | 'owed'; // owe = I owe them, owed = they owe me
+
+interface Debt {
+  id: string;
+  direction: DebtDirection;
+  person: string;
+  amount: number;
+  currency: string;
+  note: string;
+  dueDate?: string;
+  paid: boolean;
+  createdAt: string;
+  partialPaid: number;
 }
 
 /* ─────────────── Constants ─────────────── */
@@ -162,6 +178,9 @@ function loadRecurring(): Recurring[] {
 }
 function loadGoals(): Goal[] {
   try { return JSON.parse(localStorage.getItem('finance_goals') ?? '[]'); } catch { return []; }
+}
+function loadDebts(): Debt[] {
+  try { return JSON.parse(localStorage.getItem('finance_debts') ?? '[]'); } catch { return []; }
 }
 
 function thisMonth() { return new Date().toISOString().slice(0, 7); }
@@ -1343,6 +1362,366 @@ function CurrencyConverter() {
   );
 }
 
+/* ─────────────── Debts panel ─────────────── */
+
+function DebtsPanel({
+  debts, onSave, onDelete, onMarkPaid, onPartialPay,
+}: {
+  debts: Debt[];
+  onSave: (d: Omit<Debt, 'id' | 'createdAt' | 'paid' | 'partialPaid'>) => void;
+  onDelete: (id: string) => void;
+  onMarkPaid: (id: string) => void;
+  onPartialPay: (id: string, amount: number) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [payId, setPayId] = useState<string | null>(null);
+  const [payAmt, setPayAmt] = useState('');
+  const [tab, setTab] = useState<'active' | 'paid'>('active');
+  const [form, setForm] = useState({
+    direction: 'owed' as DebtDirection,
+    person: '', amount: '', currency: 'ILS', note: '', dueDate: '',
+  });
+
+  const submit = () => {
+    const n = parseFloat(form.amount);
+    if (!form.person.trim() || !n) return;
+    onSave({ direction: form.direction, person: form.person.trim(), amount: n, currency: form.currency, note: form.note.trim(), dueDate: form.dueDate || undefined });
+    setAdding(false);
+    setForm(f => ({ ...f, person: '', amount: '', note: '', dueDate: '' }));
+  };
+
+  const active = debts.filter(d => !d.paid);
+  const paid = debts.filter(d => d.paid);
+  const displayed = tab === 'active' ? active : paid;
+
+  const totalOwed = active.filter(d => d.direction === 'owed').reduce((s, d) => s + (d.amount - d.partialPaid), 0);
+  const totalOwe = active.filter(d => d.direction === 'owe').reduce((s, d) => s + (d.amount - d.partialPaid), 0);
+
+  return (
+    <div>
+      {/* Summary */}
+      {active.length > 0 && (
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          <div className="card p-3 border-r-4 border-r-green-400">
+            <div className="flex items-center gap-1 mb-1"><UserCheck size={13} className="text-green-500" /><span className="text-xs text-etsy-gray">חייבים לי</span></div>
+            <p className="font-bold text-green-600">{totalOwed.toLocaleString()}</p>
+            <p className="text-xs text-etsy-gray">{active.filter(d => d.direction === 'owed').length} חובות</p>
+          </div>
+          <div className="card p-3 border-r-4 border-r-red-400">
+            <div className="flex items-center gap-1 mb-1"><UserX size={13} className="text-red-400" /><span className="text-xs text-etsy-gray">אני חייב</span></div>
+            <p className="font-bold text-red-500">{totalOwe.toLocaleString()}</p>
+            <p className="text-xs text-etsy-gray">{active.filter(d => d.direction === 'owe').length} חובות</p>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex rounded-lg overflow-hidden border border-etsy-border">
+          <button onClick={() => setTab('active')}
+            className={`px-3 py-1.5 text-xs font-medium ${tab === 'active' ? 'bg-etsy-orange text-white' : 'text-etsy-gray bg-white'}`}>
+            פעילות ({active.length})
+          </button>
+          <button onClick={() => setTab('paid')}
+            className={`px-3 py-1.5 text-xs font-medium ${tab === 'paid' ? 'bg-etsy-orange text-white' : 'text-etsy-gray bg-white'}`}>
+            שולמו ({paid.length})
+          </button>
+        </div>
+        <button onClick={() => setAdding(!adding)} className="text-xs text-etsy-orange font-medium flex items-center gap-1">
+          <Plus size={13} /> הוסף
+        </button>
+      </div>
+
+      {adding && (
+        <div className="card p-3 mb-3 space-y-2">
+          {/* Direction */}
+          <div className="flex rounded-lg overflow-hidden border border-etsy-border">
+            <button onClick={() => setForm(f => ({ ...f, direction: 'owed' }))}
+              className={`flex-1 py-2 text-sm font-medium flex items-center justify-center gap-1.5 ${form.direction === 'owed' ? 'bg-green-500 text-white' : 'bg-white text-etsy-gray'}`}>
+              <UserCheck size={14} /> חייבים לי
+            </button>
+            <button onClick={() => setForm(f => ({ ...f, direction: 'owe' }))}
+              className={`flex-1 py-2 text-sm font-medium flex items-center justify-center gap-1.5 ${form.direction === 'owe' ? 'bg-red-500 text-white' : 'bg-white text-etsy-gray'}`}>
+              <UserX size={14} /> אני חייב
+            </button>
+          </div>
+          <div>
+            <label className="label text-xs">שם האדם</label>
+            <input className="input" value={form.person} onChange={e => setForm(f => ({ ...f, person: e.target.value }))} placeholder="ישראל ישראלי..." />
+          </div>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="label text-xs">סכום</label>
+              <input className="input" type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="0" />
+            </div>
+            <div className="w-20">
+              <label className="label text-xs">מטבע</label>
+              <select className="input text-sm" value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}>
+                {['ILS','USD','EUR'].map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="label text-xs">הערה (אופציונלי)</label>
+              <input className="input" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="הלוואה לארוחת ערב..." />
+            </div>
+            <div className="w-32">
+              <label className="label text-xs">תאריך פירעון</label>
+              <input className="input text-sm" type="date" value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={submit} className="btn-primary flex-1 py-1.5 text-sm flex items-center justify-center gap-1"><Check size={14} /> שמור</button>
+            <button onClick={() => setAdding(false)} className="btn-secondary py-1.5 text-sm flex items-center gap-1"><X size={14} /> ביטול</button>
+          </div>
+        </div>
+      )}
+
+      {displayed.length === 0 && !adding && (
+        <div className="text-center py-10">
+          <Users size={36} className="mx-auto text-etsy-border mb-2" />
+          <p className="text-etsy-gray text-sm">{tab === 'active' ? 'אין חובות פעילות' : 'אין חובות שהושלמו'}</p>
+        </div>
+      )}
+
+      {displayed.map(d => {
+        const sym = CURRENCY_SYMBOLS[d.currency] ?? d.currency;
+        const remaining = d.amount - d.partialPaid;
+        const pct = d.partialPaid > 0 ? Math.round((d.partialPaid / d.amount) * 100) : 0;
+        const days = d.dueDate ? daysUntil(d.dueDate) : null;
+        const overdue = days !== null && days < 0 && !d.paid;
+        return (
+          <div key={d.id} className={`card mb-2 overflow-hidden border-r-4 ${d.direction === 'owed' ? 'border-r-green-400' : 'border-r-red-400'}`}>
+            <div className="p-3">
+              <div className="flex items-start gap-2 mb-2">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${d.direction === 'owed' ? 'bg-green-100' : 'bg-red-100'}`}>
+                  {d.direction === 'owed' ? <UserCheck size={15} className="text-green-600" /> : <UserX size={15} className="text-red-500" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm">{d.person}</p>
+                  <p className="text-xs text-etsy-gray">
+                    {d.direction === 'owed' ? 'חייב לי' : 'אני חייב'}
+                    {d.note && ` · ${d.note}`}
+                  </p>
+                </div>
+                <div className="text-left">
+                  <p className={`font-bold text-sm ${d.direction === 'owed' ? 'text-green-600' : 'text-red-500'}`}>
+                    {sym}{remaining.toLocaleString()}
+                  </p>
+                  {d.partialPaid > 0 && <p className="text-xs text-etsy-gray">מתוך {sym}{d.amount.toLocaleString()}</p>}
+                </div>
+              </div>
+
+              {d.partialPaid > 0 && (
+                <div className="mb-2">
+                  <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full ${d.direction === 'owed' ? 'bg-green-500' : 'bg-red-400'}`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <p className="text-xs text-etsy-gray mt-0.5">{pct}% שולם</p>
+                </div>
+              )}
+
+              {d.dueDate && (
+                <div className={`flex items-center gap-1 text-xs mb-2 ${overdue ? 'text-red-500 font-medium' : 'text-etsy-gray'}`}>
+                  <Clock size={11} />
+                  {overdue ? 'איחור! ' : ''}{fmtDate(d.dueDate)}
+                  {days !== null && !d.paid && <span>({days < 0 ? `${Math.abs(days)} ימים באיחור` : days === 0 ? 'היום' : `${days} ימים`})</span>}
+                </div>
+              )}
+
+              {!d.paid && (
+                payId === d.id ? (
+                  <div className="flex gap-1.5">
+                    <input className="input flex-1 py-1 text-sm" type="number" value={payAmt}
+                      onChange={e => setPayAmt(e.target.value)} placeholder={`סכום (${sym})`} autoFocus />
+                    <button onClick={() => { onPartialPay(d.id, parseFloat(payAmt) || 0); setPayId(null); setPayAmt(''); }}
+                      className="px-3 py-1 bg-green-500 text-white rounded-lg text-sm"><Check size={13} /></button>
+                    <button onClick={() => setPayId(null)} className="px-2 py-1 border border-etsy-border rounded-lg text-sm text-etsy-gray"><X size={13} /></button>
+                  </div>
+                ) : (
+                  <div className="flex gap-1.5">
+                    <button onClick={() => onMarkPaid(d.id)}
+                      className="flex-1 py-1 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg flex items-center justify-center gap-1">
+                      <Check size={11} /> שולם במלואו
+                    </button>
+                    <button onClick={() => setPayId(d.id)}
+                      className="flex-1 py-1 text-xs font-medium bg-gray-50 text-etsy-gray border border-etsy-border rounded-lg flex items-center justify-center gap-1">
+                      <DollarSign size={11} /> תשלום חלקי
+                    </button>
+                    <button onClick={() => onDelete(d.id)} className="px-2 py-1 text-xs text-red-400 border border-etsy-border rounded-lg hover:bg-red-50">
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                )
+              )}
+              {d.paid && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-green-600 font-medium flex items-center gap-1"><Check size={11} /> שולם</span>
+                  <button onClick={() => onDelete(d.id)} className="text-xs text-etsy-gray"><Trash2 size={11} /></button>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─────────────── All transactions view ─────────────── */
+
+function AllTransactions({
+  txs, accounts,
+}: {
+  txs: Transaction[];
+  accounts: Account[];
+}) {
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState<TxType | 'all'>('all');
+  const [catFilter, setCatFilter] = useState('');
+  const [accFilter, setAccFilter] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [page, setPage] = useState(0);
+  const PAGE = 30;
+
+  const allCats = useMemo(() => [...new Set(txs.filter(t => t.type !== 'transfer').map(t => t.category))].sort(), [txs]);
+
+  const filtered = useMemo(() => {
+    return [...txs]
+      .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
+      .filter(t => typeFilter === 'all' || t.type === typeFilter)
+      .filter(t => !catFilter || t.category === catFilter)
+      .filter(t => !accFilter || t.accountId === accFilter)
+      .filter(t => !search.trim() || t.note.includes(search) || t.category.includes(search) ||
+        accounts.find(a => a.id === t.accountId)?.name.includes(search));
+  }, [txs, typeFilter, catFilter, accFilter, search, accounts]);
+
+  const pageItems = filtered.slice(page * PAGE, (page + 1) * PAGE);
+  const totalPages = Math.ceil(filtered.length / PAGE);
+
+  const totalIn = filtered.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const totalOut = filtered.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+
+  return (
+    <div>
+      {/* Search */}
+      <div className="relative mb-2">
+        <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-etsy-gray" />
+        <input className="input pr-8 text-sm" value={search} onChange={e => { setSearch(e.target.value); setPage(0); }} placeholder="חיפוש בכל התנועות..." />
+      </div>
+
+      {/* Filter toggle */}
+      <div className="flex gap-2 mb-3">
+        {(['all','income','expense'] as const).map(f => (
+          <button key={f} onClick={() => { setTypeFilter(f); setPage(0); }}
+            className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${typeFilter === f ? 'bg-etsy-orange text-white border-etsy-orange' : 'bg-white text-etsy-gray border-etsy-border'}`}>
+            {f === 'all' ? 'הכל' : f === 'income' ? 'הכנסות' : 'הוצאות'}
+          </button>
+        ))}
+        <button onClick={() => setShowFilters(!showFilters)}
+          className={`mr-auto px-2.5 py-1 rounded-full text-xs font-medium border flex items-center gap-1 ${showFilters ? 'bg-etsy-orange text-white border-etsy-orange' : 'bg-white text-etsy-gray border-etsy-border'}`}>
+          <Filter size={11} /> סינון
+        </button>
+      </div>
+
+      {showFilters && (
+        <div className="card p-3 mb-3 flex gap-2">
+          <div className="flex-1">
+            <label className="label text-xs">קטגוריה</label>
+            <select className="input text-sm" value={catFilter} onChange={e => { setCatFilter(e.target.value); setPage(0); }}>
+              <option value="">הכל</option>
+              {allCats.map(c => <option key={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="flex-1">
+            <label className="label text-xs">חשבון</label>
+            <select className="input text-sm" value={accFilter} onChange={e => { setAccFilter(e.target.value); setPage(0); }}>
+              <option value="">הכל</option>
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+        </div>
+      )}
+
+      {/* Summary */}
+      {filtered.length > 0 && (
+        <div className="card p-3 mb-3 flex gap-4">
+          <div className="flex-1 text-center">
+            <p className="text-xs text-etsy-gray">תנועות</p>
+            <p className="font-bold">{filtered.length}</p>
+          </div>
+          <div className="flex-1 text-center">
+            <p className="text-xs text-etsy-gray">הכנסות</p>
+            <p className="font-bold text-green-600">{totalIn.toLocaleString()}</p>
+          </div>
+          <div className="flex-1 text-center">
+            <p className="text-xs text-etsy-gray">הוצאות</p>
+            <p className="font-bold text-red-500">{totalOut.toLocaleString()}</p>
+          </div>
+        </div>
+      )}
+
+      {filtered.length === 0 && <p className="text-center text-etsy-gray text-sm py-10">אין תנועות התואמות לסינון</p>}
+
+      {/* Grouped by date */}
+      {(() => {
+        let lastDate = '';
+        return pageItems.map(tx => {
+          const acc = accounts.find(a => a.id === tx.accountId);
+          const sym = acc ? (CURRENCY_SYMBOLS[acc.currency] ?? acc.currency) : '';
+          const isTransfer = tx.type === 'transfer';
+          const showDateHeader = tx.date !== lastDate;
+          lastDate = tx.date;
+          return (
+            <div key={tx.id}>
+              {showDateHeader && (
+                <p className="text-xs text-etsy-gray font-medium py-1.5 px-1">{fmtDate(tx.date)}</p>
+              )}
+              <div className="card p-3 mb-1.5 flex items-center gap-2.5">
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${tx.type === 'income' ? 'bg-green-100' : isTransfer ? 'bg-blue-100' : 'bg-red-100'}`}>
+                  {tx.type === 'income' ? <ArrowDownCircle size={14} className="text-green-600" />
+                    : isTransfer ? <ArrowRightLeft size={14} className="text-blue-500" />
+                    : <ArrowUpCircle size={14} className="text-red-500" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{tx.note || tx.category}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="badge-gray text-[10px]">{tx.category}</span>
+                    {acc && (
+                      <span className="text-[10px] text-etsy-gray flex items-center gap-0.5">
+                        <span className="w-1.5 h-1.5 rounded-full inline-block flex-shrink-0" style={{ background: acc.color }} />
+                        {acc.name}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <p className={`font-bold text-sm flex-shrink-0 ${tx.type === 'income' ? 'text-green-600' : isTransfer ? 'text-blue-500' : 'text-red-500'}`}>
+                  {tx.type === 'income' ? '+' : isTransfer ? '→' : '-'}{sym}{tx.amount.toLocaleString()}
+                </p>
+              </div>
+            </div>
+          );
+        });
+      })()}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-3">
+          <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
+            className="btn-secondary py-1.5 px-3 text-sm disabled:opacity-30 flex items-center gap-1">
+            <ChevronRight size={14} /> הקודם
+          </button>
+          <span className="text-xs text-etsy-gray">{page + 1} / {totalPages}</span>
+          <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
+            className="btn-secondary py-1.5 px-3 text-sm disabled:opacity-30 flex items-center gap-1">
+            הבא <ChevronLeft size={14} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─────────────── Insights ─────────────── */
 
 interface Insight {
@@ -2066,7 +2445,7 @@ function Overview({
 
 /* ─────────────── Main page ─────────────── */
 
-type MainTab = 'overview' | 'accounts' | 'budget' | 'recurring' | 'goals' | 'converter' | 'stats' | 'insights' | 'settings';
+type MainTab = 'overview' | 'accounts' | 'budget' | 'recurring' | 'goals' | 'converter' | 'stats' | 'insights' | 'debts' | 'all-txs' | 'settings';
 
 export default function Finance() {
   const toast = useToast();
@@ -2082,6 +2461,7 @@ export default function Finance() {
   const [budgets, setBudgets] = useState<Budget[]>(loadBudgets);
   const [recurring, setRecurring] = useState<Recurring[]>(loadRecurring);
   const [goals, setGoals] = useState<Goal[]>(loadGoals);
+  const [debts, setDebts] = useState<Debt[]>(loadDebts);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Account | null>(null);
   const [detail, setDetail] = useState<Account | null>(null);
@@ -2094,6 +2474,7 @@ export default function Finance() {
   useEffect(() => { localStorage.setItem('finance_budgets', JSON.stringify(budgets)); }, [budgets]);
   useEffect(() => { localStorage.setItem('finance_recurring', JSON.stringify(recurring)); }, [recurring]);
   useEffect(() => { localStorage.setItem('finance_goals', JSON.stringify(goals)); }, [goals]);
+  useEffect(() => { localStorage.setItem('finance_debts', JSON.stringify(debts)); }, [debts]);
 
   const effectiveBalance = (acc: Account) => {
     const delta = txs.filter(t => t.accountId === acc.id)
@@ -2167,6 +2548,14 @@ export default function Finance() {
     toast.success('יעד נוסף! 🎯');
   };
   const deleteGoal = (id: string) => setGoals(prev => prev.filter(g => g.id !== id));
+  const saveDebt = (d: Omit<Debt, 'id' | 'createdAt' | 'paid' | 'partialPaid'>) => {
+    setDebts(prev => [...prev, { ...d, id: genId(), createdAt: new Date().toISOString(), paid: false, partialPaid: 0 }]);
+    toast.success('חוב נרשם');
+  };
+  const deleteDebt = (id: string) => setDebts(prev => prev.filter(d => d.id !== id));
+  const markDebtPaid = (id: string) => setDebts(prev => prev.map(d => d.id === id ? { ...d, paid: true, partialPaid: d.amount } : d));
+  const partialPayDebt = (id: string, amount: number) => setDebts(prev => prev.map(d => d.id === id ? { ...d, partialPaid: Math.min(d.partialPaid + amount, d.amount) } : d));
+
   const depositGoal = (id: string, amount: number) => {
     setGoals(prev => prev.map(g => g.id === id ? { ...g, saved: Math.min(g.saved + amount, g.target) } : g));
     toast.success('חיסכון עודכן ✓');
@@ -2290,6 +2679,8 @@ export default function Finance() {
         </div>
         <div className="flex rounded-xl overflow-hidden border border-etsy-border bg-white">
           {([
+            { key: 'debts',     label: 'חובות',   icon: <Users size={12} /> },
+            { key: 'all-txs',   label: 'כל תנועות', icon: <Filter size={12} /> },
             { key: 'converter', label: 'ממיר',    icon: <Zap size={12} /> },
             { key: 'settings',  label: 'הגדרות',  icon: <Settings size={12} /> },
           ] as { key: MainTab; label: string; icon: React.ReactNode }[]).map(t => (
@@ -2412,6 +2803,22 @@ export default function Finance() {
           onDelete={deleteGoal}
           onDeposit={depositGoal}
         />
+      )}
+
+      {/* Debts tab */}
+      {tab === 'debts' && (
+        <DebtsPanel
+          debts={debts}
+          onSave={saveDebt}
+          onDelete={deleteDebt}
+          onMarkPaid={markDebtPaid}
+          onPartialPay={partialPayDebt}
+        />
+      )}
+
+      {/* All transactions tab */}
+      {tab === 'all-txs' && (
+        <AllTransactions txs={txs} accounts={accounts} />
       )}
 
       {/* Converter tab */}
