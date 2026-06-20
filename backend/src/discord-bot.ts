@@ -226,7 +226,7 @@ const commands = [
   // SERVER SETUP
   new SlashCommandBuilder().setName('setup-server').setDescription('🏗️ בנה שרת מקצועי מלא עם ערוצים, תפקידים וטיקטים (Admin)').addStringOption(o=>o.setName('name').setDescription('שם השרת (אופציונלי)').setRequired(false)),
   new SlashCommandBuilder().setName('setup-stocks').setDescription('📈 בנה שרת מניות מקצועי עם ערוצים ותפקידים (Admin)'),
-  new SlashCommandBuilder().setName('stock-live').setDescription('📡 Live ticker - עדכון אוטומטי כל 60 שניות').addStringOption(o=>o.setName('symbol').setDescription('סימול (AAPL, TSLA...)').setRequired(true)),
+  new SlashCommandBuilder().setName('stock-live').setDescription('📡 Live ticker - עדכון אוטומטי כל 15 שניות').addStringOption(o=>o.setName('symbol').setDescription('סימול (AAPL, TSLA...)').setRequired(true)),
   new SlashCommandBuilder().setName('stock-stop').setDescription('⏹️ עצור live ticker בערוץ זה'),
   new SlashCommandBuilder().setName('setup-tickets').setDescription('🎫 הגדרת מערכת טיקטים (Admin)').addChannelOption(o=>o.setName('channel').setDescription('ערוץ פתיחת טיקטים').setRequired(false)),
   new SlashCommandBuilder().setName('close-ticket').setDescription('🔒 סגירת טיקט נוכחי'),
@@ -1369,7 +1369,7 @@ if (commandName === 'uptime') {
       );
       const msg = await interaction.editReply({embeds:[firstEmbed], components:[stopBtn]}) as any;
 
-      // Auto-update every 60 seconds
+      // Auto-update every 15 seconds
       const intervalId = setInterval(async () => {
         try {
           const e = await buildLiveEmbed();
