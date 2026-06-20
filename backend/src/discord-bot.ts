@@ -20,14 +20,23 @@ const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '';
 async function geminiAsk(prompt: string): Promise<string> {
   const key = process.env.GEMINI_API_KEY || '';
   if (!key) throw new Error('GEMINI_API_KEY חסר');
-  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.0-pro:generateContent?key=${key}`;
-  try {
-    const res = await axios.post(url, { contents: [{ parts: [{ text: prompt }] }] });
-    return res.data?.candidates?.[0]?.content?.parts?.[0]?.text || 'אין תשובה';
-  } catch(e: any) {
-    const detail = e.response?.data?.error?.message || e.response?.data || e.message;
-    throw new Error(`Gemini: ${JSON.stringify(detail).slice(0,300)}`);
+
+  // Try models in order until one works
+  const models = [
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
+    'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-001:generateContent',
+  ];
+
+  for (const baseUrl of models) {
+    try {
+      const res = await axios.post(`${baseUrl}?key=${key}`, { contents: [{ parts: [{ text: prompt }] }] });
+      const text = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) return text;
+    } catch {}
   }
+  throw new Error('כל מודלי Gemini נכשלו. בדוק את המפתח ב-Railway.');
 }
 
 if (!TOKEN || !CLIENT_ID) { console.error('❌ DISCORD_BOT_TOKEN or DISCORD_CLIENT_ID is not set'); process.exit(1); }
