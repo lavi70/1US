@@ -1,25 +1,22 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // @ts-nocheck
 // ╔══════════════════════════════════════════╗
-// ║       🎮 DISCORD BOT BY YANIV           ║
-// ║   Server Manager + Shop + Commands      ║
+// ║       🎮 DISCORD BOT BY YANIV v3.0      ║
+// ║   100+ Commands - Server Manager+Shop   ║
 // ╚══════════════════════════════════════════╝
 
-import { Client, GatewayIntentBits, EmbedBuilder, SlashCommandBuilder, REST, Routes, PermissionFlagsBits, ActivityType } from 'discord.js';
+import { Client, GatewayIntentBits, EmbedBuilder, SlashCommandBuilder, REST, Routes, PermissionFlagsBits, ActivityType, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } from 'discord.js';
 import { exec, execSync } from 'child_process';
 import { promisify } from 'util';
 import * as os from 'os';
+import * as fs from 'fs';
 
 const execAsync = promisify(exec);
 
 const TOKEN = process.env.DISCORD_BOT_TOKEN || '';
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '';
-const ADMIN_ROLE = process.env.DISCORD_ADMIN_ROLE || 'Admin';
 
-if (!TOKEN || !CLIENT_ID) {
-  console.error('❌ DISCORD_BOT_TOKEN or DISCORD_CLIENT_ID is not set');
-  process.exit(1);
-}
+if (!TOKEN || !CLIENT_ID) { console.error('❌ DISCORD_BOT_TOKEN or DISCORD_CLIENT_ID is not set'); process.exit(1); }
 
 const client = new Client({
   intents: [
@@ -27,412 +24,1047 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildPresences,
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildMessageReactions,
   ]
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function formatBytes(bytes: number): string {
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let i = 0;
-  while (bytes >= 1024 && i < units.length - 1) { bytes /= 1024; i++; }
-  return `${bytes.toFixed(2)} ${units[i]}`;
+function formatBytes(b: number): string {
+  const u = ['B','KB','MB','GB','TB']; let i=0;
+  while (b>=1024&&i<u.length-1){b/=1024;i++;} return `${b.toFixed(2)} ${u[i]}`;
 }
-
-function formatUptime(seconds: number): string {
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
+function formatUptime(s: number): string {
+  const d=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60);
   return `${d}d ${h}h ${m}m`;
 }
-
 async function runCmd(cmd: string): Promise<string> {
   try {
-    const { stdout, stderr } = await execAsync(cmd, { timeout: 15000 });
-    return (stdout || stderr || '(אין פלט)').trim().slice(0, 1900);
-  } catch (e: any) {
-    return `שגיאה: ${e.message}`;
-  }
+    const {stdout,stderr} = await execAsync(cmd,{timeout:15000});
+    return (stdout||stderr||'(אין פלט)').trim().slice(0,1900);
+  } catch(e:any){return `שגיאה: ${e.message.slice(0,200)}`;}
 }
-
 function isAdmin(member: any): boolean {
-  return member?.permissions?.has(PermissionFlagsBits.Administrator) ||
-    member?.roles?.cache?.some((r: any) => r.name === ADMIN_ROLE);
+  return member?.permissions?.has(PermissionFlagsBits.Administrator);
 }
-
-// ─── Slash Commands ───────────────────────────────────────────────────────────
-const commands = [
-  new SlashCommandBuilder().setName('status').setDescription('סטטוס השרת - CPU, RAM, Disk'),
-  new SlashCommandBuilder().setName('uptime').setDescription('זמן פעילות השרת'),
-  new SlashCommandBuilder().setName('ps').setDescription('תהליכים פעילים'),
-  new SlashCommandBuilder().setName('top').setDescription('10 תהליכים כבדים'),
-  new SlashCommandBuilder().setName('df').setDescription('שימוש בדיסק'),
-  new SlashCommandBuilder().setName('netstat').setDescription('חיבורי רשת'),
-  new SlashCommandBuilder().setName('docker').setDescription('קונטיינרים פעילים'),
-  new SlashCommandBuilder().setName('dockerstats').setDescription('סטטיסטיקות Docker'),
-  new SlashCommandBuilder().setName('services').setDescription('שירותים פעילים'),
-  new SlashCommandBuilder().setName('about').setDescription('אודות הבוט'),
-  new SlashCommandBuilder().setName('help').setDescription('כל הפקודות'),
-  new SlashCommandBuilder().setName('shop').setDescription('חנות מוצרים'),
-  new SlashCommandBuilder().setName('ping').setDescription('בדיקת חיבור'),
-  new SlashCommandBuilder().setName('serverinfo').setDescription('מידע על שרת הדיסקורד'),
-  new SlashCommandBuilder().setName('userinfo').setDescription('מידע על משתמש').addUserOption(o => o.setName('user').setDescription('משתמש').setRequired(false)),
-  new SlashCommandBuilder().setName('members').setDescription('מספר חברים בשרת'),
-  new SlashCommandBuilder().setName('clear').setDescription('מחיקת הודעות').addIntegerOption(o => o.setName('amount').setDescription('כמות').setRequired(true).setMinValue(1).setMaxValue(100)),
-  new SlashCommandBuilder().setName('kick').setDescription('בעיטת משתמש').addUserOption(o => o.setName('user').setDescription('משתמש').setRequired(true)).addStringOption(o => o.setName('reason').setDescription('סיבה').setRequired(false)),
-  new SlashCommandBuilder().setName('ban').setDescription('חסימת משתמש').addUserOption(o => o.setName('user').setDescription('משתמש').setRequired(true)).addStringOption(o => o.setName('reason').setDescription('סיבה').setRequired(false)),
-  new SlashCommandBuilder().setName('mute').setDescription('השתקת משתמש').addUserOption(o => o.setName('user').setDescription('משתמש').setRequired(true)).addIntegerOption(o => o.setName('minutes').setDescription('דקות').setRequired(false)),
-  new SlashCommandBuilder().setName('role').setDescription('הוספת תפקיד').addUserOption(o => o.setName('user').setDescription('משתמש').setRequired(true)).addRoleOption(o => o.setName('role').setDescription('תפקיד').setRequired(true)),
-  new SlashCommandBuilder().setName('announce').setDescription('הכרזה לכל השרת').addStringOption(o => o.setName('message').setDescription('ההודעה').setRequired(true)),
-  new SlashCommandBuilder().setName('exec').setDescription('הרץ פקודת Shell (Admin)').addStringOption(o => o.setName('command').setDescription('הפקודה').setRequired(true)),
-  new SlashCommandBuilder().setName('kill').setDescription('סיום תהליך').addIntegerOption(o => o.setName('pid').setDescription('PID').setRequired(true)),
-  new SlashCommandBuilder().setName('restart').setDescription('הפעל מחדש שירות').addStringOption(o => o.setName('service').setDescription('שם השירות').setRequired(true)),
-  new SlashCommandBuilder().setName('logs').setDescription('לוגי שירות').addStringOption(o => o.setName('service').setDescription('שם השירות').setRequired(true)),
-  new SlashCommandBuilder().setName('ping_host').setDescription('Ping לhost').addStringOption(o => o.setName('host').setDescription('כתובת').setRequired(true)),
-  new SlashCommandBuilder().setName('buy').setDescription('רכישת מוצר').addStringOption(o => o.setName('product').setDescription('מזהה מוצר').setRequired(true)),
-].map(cmd => cmd.toJSON());
-
-// ─── Register Commands ────────────────────────────────────────────────────────
-const rest = new REST({ version: '10' }).setToken(TOKEN);
-
-async function registerCommands() {
-  try {
-    console.log('📋 רושם slash commands...');
-    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-    console.log('✅ Commands רשומים!');
-  } catch (e) {
-    console.error('❌ שגיאה ברישום commands:', e);
-  }
+function isMod(member: any): boolean {
+  return member?.permissions?.has(PermissionFlagsBits.ModerateMembers) || isAdmin(member);
+}
+function embed(title: string, desc: string, color = 0x667eea): EmbedBuilder {
+  return new EmbedBuilder().setTitle(title).setDescription(desc).setColor(color).setFooter({text:'Bot by Yaniv 🚀'}).setTimestamp();
+}
+function errEmbed(msg: string): EmbedBuilder {
+  return embed('❌ שגיאה', msg, 0xff0000);
 }
 
 // ─── Products ─────────────────────────────────────────────────────────────────
-const PRODUCTS: Record<string, any> = {
-  'discord_server': { name: '🎮 שרת דיסקורד מוכן', price: 29.99 },
-  'discord_bot': { name: '🤖 בוט דיסקורד', price: 49.99 },
-  'website_basic': { name: '🌐 אתר בסיסי', price: 99.99 },
-  'vps_1gb': { name: '🖥️ VPS 1GB', price: 5.99 },
-  'vps_2gb': { name: '🖥️ VPS 2GB', price: 9.99 },
-  'telegram_bot': { name: '📱 בוט טלגרם', price: 39.99 },
-  'image_pack': { name: '🖼️ חבילת תמונות AI', price: 14.99 },
-  'stars_100': { name: '⭐ 100 כוכבים', price: 4.99 },
-  'stars_500': { name: '⭐ 500 כוכבים', price: 19.99 },
+const PRODUCTS: Record<string,any> = {
+  'discord_server': {name:'🎮 שרת דיסקורד מוכן',price:29.99,desc:'שרת עם ערוצים, בוטים, תפקידים'},
+  'discord_bot': {name:'🤖 בוט דיסקורד',price:49.99,desc:'בוט מותאם אישית'},
+  'telegram_bot': {name:'📱 בוט טלגרם',price:39.99,desc:'בוט טלגרם מלא'},
+  'website_basic': {name:'🌐 אתר Landing Page',price:99.99,desc:'אתר מקצועי'},
+  'website_shop': {name:'🛒 חנות אונליין',price:199.99,desc:'חנות עם תשלומים'},
+  'vps_1gb': {name:'🖥️ VPS 1GB',price:5.99,desc:'שרת וירטואלי'},
+  'vps_2gb': {name:'🖥️ VPS 2GB',price:9.99,desc:'שרת וירטואלי'},
+  'vps_4gb': {name:'🖥️ VPS 4GB',price:19.99,desc:'שרת וירטואלי'},
+  'image_pack': {name:'🖼️ 50 תמונות AI',price:14.99,desc:'תמונות AI מותאמות'},
+  'video_pack': {name:'🎥 10 סרטונים',price:24.99,desc:'סרטונים לעסק'},
+  'stars_100': {name:'⭐ 100 כוכבים',price:4.99,desc:'Telegram Stars'},
+  'stars_500': {name:'⭐ 500 כוכבים',price:19.99,desc:'Telegram Stars'},
+  'stars_1000': {name:'⭐ 1000 כוכבים',price:34.99,desc:'Telegram Stars'},
+  'seo_pack': {name:'📈 חבילת SEO',price:79.99,desc:'אופטימיזציה לגוגל'},
+  'logo_design': {name:'🎨 עיצוב לוגו',price:49.99,desc:'לוגו מקצועי'},
 };
+
+// ─── Giveaway storage ─────────────────────────────────────────────────────────
+const giveaways: Record<string,any> = {};
+const polls: Record<string,any> = {};
+const warnings: Record<string,string[]> = {};
+const afkUsers: Record<string,string> = {};
+const suggestions: any[] = [];
+
+// ─── Verify storage ───────────────────────────────────────────────────────────
+const verifyConfig: Record<string,{roleId:string,channelId:string}> = {};
+const verifiedUsers: Record<string,Set<string>> = {};
+
+// ─── Commands List ────────────────────────────────────────────────────────────
+const commands = [
+  // INFO
+  new SlashCommandBuilder().setName('help').setDescription('כל הפקודות'),
+  new SlashCommandBuilder().setName('about').setDescription('אודות הבוט'),
+  new SlashCommandBuilder().setName('ping').setDescription('בדיקת חיבור'),
+  new SlashCommandBuilder().setName('uptime').setDescription('זמן פעילות'),
+  new SlashCommandBuilder().setName('version').setDescription('גרסת הבוט'),
+  new SlashCommandBuilder().setName('invite').setDescription('קישור הזמנה לבוט'),
+  new SlashCommandBuilder().setName('vote').setDescription('הצבע לבוט'),
+
+  // SERVER INFO
+  new SlashCommandBuilder().setName('serverinfo').setDescription('מידע על השרת'),
+  new SlashCommandBuilder().setName('membercount').setDescription('מספר חברים'),
+  new SlashCommandBuilder().setName('channelinfo').setDescription('מידע על הערוץ הנוכחי'),
+  new SlashCommandBuilder().setName('roleinfo').setDescription('מידע על תפקיד').addRoleOption(o=>o.setName('role').setDescription('תפקיד').setRequired(true)),
+  new SlashCommandBuilder().setName('roles').setDescription('רשימת תפקידים'),
+  new SlashCommandBuilder().setName('channels').setDescription('רשימת ערוצים'),
+  new SlashCommandBuilder().setName('emojis').setDescription('רשימת אמוג\'ים'),
+  new SlashCommandBuilder().setName('boosts').setDescription('מידע על בוסטים'),
+  new SlashCommandBuilder().setName('icon').setDescription('תמונת השרת'),
+
+  // USER INFO
+  new SlashCommandBuilder().setName('userinfo').setDescription('מידע על משתמש').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(false)),
+  new SlashCommandBuilder().setName('avatar').setDescription('תמונת פרופיל').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(false)),
+  new SlashCommandBuilder().setName('banner').setDescription('באנר של משתמש').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(false)),
+  new SlashCommandBuilder().setName('whois').setDescription('מי זה?').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)),
+
+  // MODERATION
+  new SlashCommandBuilder().setName('kick').setDescription('בעיטת משתמש').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)).addStringOption(o=>o.setName('reason').setDescription('סיבה').setRequired(false)),
+  new SlashCommandBuilder().setName('ban').setDescription('חסימת משתמש').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)).addStringOption(o=>o.setName('reason').setDescription('סיבה').setRequired(false)),
+  new SlashCommandBuilder().setName('unban').setDescription('ביטול חסימה').addStringOption(o=>o.setName('userid').setDescription('User ID').setRequired(true)),
+  new SlashCommandBuilder().setName('mute').setDescription('השתקת משתמש').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)).addIntegerOption(o=>o.setName('minutes').setDescription('דקות').setRequired(false)),
+  new SlashCommandBuilder().setName('unmute').setDescription('ביטול השתקה').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)),
+  new SlashCommandBuilder().setName('warn').setDescription('אזהרת משתמש').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)).addStringOption(o=>o.setName('reason').setDescription('סיבה').setRequired(true)),
+  new SlashCommandBuilder().setName('warnings').setDescription('אזהרות של משתמש').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)),
+  new SlashCommandBuilder().setName('clearwarns').setDescription('מחיקת אזהרות').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)),
+  new SlashCommandBuilder().setName('clear').setDescription('מחיקת הודעות').addIntegerOption(o=>o.setName('amount').setDescription('כמות 1-100').setRequired(true).setMinValue(1).setMaxValue(100)),
+  new SlashCommandBuilder().setName('slowmode').setDescription('Slowmode לערוץ').addIntegerOption(o=>o.setName('seconds').setDescription('שניות (0 לכיבוי)').setRequired(true)),
+  new SlashCommandBuilder().setName('lock').setDescription('נעילת ערוץ'),
+  new SlashCommandBuilder().setName('unlock').setDescription('פתיחת ערוץ'),
+  new SlashCommandBuilder().setName('hide').setDescription('הסתרת ערוץ'),
+  new SlashCommandBuilder().setName('show').setDescription('הצגת ערוץ'),
+  new SlashCommandBuilder().setName('nuke').setDescription('מחיקת כל הודעות הערוץ'),
+  new SlashCommandBuilder().setName('move').setDescription('העברת משתמש לVC').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)).addChannelOption(o=>o.setName('channel').setDescription('ערוץ').setRequired(true)),
+  new SlashCommandBuilder().setName('deafen').setDescription('השתקת אודיו').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)),
+  new SlashCommandBuilder().setName('bans').setDescription('רשימת חסומים'),
+
+  // ROLES
+  new SlashCommandBuilder().setName('role').setDescription('הוסף/הסר תפקיד').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)).addRoleOption(o=>o.setName('role').setDescription('תפקיד').setRequired(true)),
+  new SlashCommandBuilder().setName('addrole').setDescription('הוסף תפקיד למשתמש').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)).addRoleOption(o=>o.setName('role').setDescription('תפקיד').setRequired(true)),
+  new SlashCommandBuilder().setName('removerole').setDescription('הסר תפקיד ממשתמש').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)).addRoleOption(o=>o.setName('role').setDescription('תפקיד').setRequired(true)),
+  new SlashCommandBuilder().setName('createrole').setDescription('יצירת תפקיד חדש').addStringOption(o=>o.setName('name').setDescription('שם התפקיד').setRequired(true)).addStringOption(o=>o.setName('color').setDescription('צבע hex').setRequired(false)),
+  new SlashCommandBuilder().setName('delrole').setDescription('מחיקת תפקיד').addRoleOption(o=>o.setName('role').setDescription('תפקיד').setRequired(true)),
+
+  // CHANNELS
+  new SlashCommandBuilder().setName('createchannel').setDescription('יצירת ערוץ').addStringOption(o=>o.setName('name').setDescription('שם הערוץ').setRequired(true)).addStringOption(o=>o.setName('type').setDescription('text/voice').setRequired(false)),
+  new SlashCommandBuilder().setName('delchannel').setDescription('מחיקת ערוץ').addChannelOption(o=>o.setName('channel').setDescription('ערוץ').setRequired(true)),
+  new SlashCommandBuilder().setName('renamechannel').setDescription('שינוי שם ערוץ').addStringOption(o=>o.setName('name').setDescription('שם חדש').setRequired(true)),
+  new SlashCommandBuilder().setName('topic').setDescription('שינוי תיאור ערוץ').addStringOption(o=>o.setName('topic').setDescription('תיאור').setRequired(true)),
+
+  // FUN
+  new SlashCommandBuilder().setName('8ball').setDescription('שאל את הכדור הקסום').addStringOption(o=>o.setName('question').setDescription('שאלה').setRequired(true)),
+  new SlashCommandBuilder().setName('roll').setDescription('הטל קוביה').addIntegerOption(o=>o.setName('sides').setDescription('צלעות (ברירת מחדל 6)').setRequired(false)),
+  new SlashCommandBuilder().setName('flip').setDescription('הטלת מטבע'),
+  new SlashCommandBuilder().setName('rps').setDescription('אבן נייר מספריים').addStringOption(o=>o.setName('choice').setDescription('אבן/נייר/מספריים').setRequired(true).addChoices({name:'אבן',value:'אבן'},{name:'נייר',value:'נייר'},{name:'מספריים',value:'מספריים'})),
+  new SlashCommandBuilder().setName('joke').setDescription('בדיחה אקראית'),
+  new SlashCommandBuilder().setName('quote').setDescription('ציטוט מעורר השראה'),
+  new SlashCommandBuilder().setName('fact').setDescription('עובדה מעניינת'),
+  new SlashCommandBuilder().setName('meme').setDescription('מם אקראי'),
+  new SlashCommandBuilder().setName('rate').setDescription('דרג משהו').addStringOption(o=>o.setName('thing').setDescription('מה לדרג?').setRequired(true)),
+  new SlashCommandBuilder().setName('choose').setDescription('בחר בשבילי').addStringOption(o=>o.setName('options').setDescription('אפשרויות מופרדות בפסיק').setRequired(true)),
+  new SlashCommandBuilder().setName('reverse').setDescription('הפוך טקסט').addStringOption(o=>o.setName('text').setDescription('טקסט').setRequired(true)),
+  new SlashCommandBuilder().setName('ship').setDescription('שיפ שני משתמשים').addUserOption(o=>o.setName('user1').setDescription('משתמש 1').setRequired(true)).addUserOption(o=>o.setName('user2').setDescription('משתמש 2').setRequired(true)),
+  new SlashCommandBuilder().setName('hug').setDescription('חיבוק').addUserOption(o=>o.setName('user').setDescription('למי?').setRequired(true)),
+  new SlashCommandBuilder().setName('slap').setDescription('סטירה').addUserOption(o=>o.setName('user').setDescription('למי?').setRequired(true)),
+  new SlashCommandBuilder().setName('roast').setDescription('ביקורת על משתמש').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)),
+  new SlashCommandBuilder().setName('compliment').setDescription('מחמאה למשתמש').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)),
+  new SlashCommandBuilder().setName('random').setDescription('מספר אקראי').addIntegerOption(o=>o.setName('min').setDescription('מינימום').setRequired(false)).addIntegerOption(o=>o.setName('max').setDescription('מקסימום').setRequired(false)),
+  new SlashCommandBuilder().setName('tictactoe').setDescription('משחק איקס עיגול').addUserOption(o=>o.setName('opponent').setDescription('יריב').setRequired(true)),
+
+  // UTILITY
+  new SlashCommandBuilder().setName('announce').setDescription('הכרזה').addStringOption(o=>o.setName('message').setDescription('הודעה').setRequired(true)).addChannelOption(o=>o.setName('channel').setDescription('ערוץ').setRequired(false)),
+  new SlashCommandBuilder().setName('embed').setDescription('שלח Embed').addStringOption(o=>o.setName('title').setDescription('כותרת').setRequired(true)).addStringOption(o=>o.setName('description').setDescription('תוכן').setRequired(true)).addStringOption(o=>o.setName('color').setDescription('צבע hex').setRequired(false)),
+  new SlashCommandBuilder().setName('poll').setDescription('סקר').addStringOption(o=>o.setName('question').setDescription('שאלה').setRequired(true)).addStringOption(o=>o.setName('options').setDescription('אפשרויות מופרדות בפסיק').setRequired(false)),
+  new SlashCommandBuilder().setName('giveaway').setDescription('הגרלה').addStringOption(o=>o.setName('prize').setDescription('פרס').setRequired(true)).addIntegerOption(o=>o.setName('minutes').setDescription('דקות').setRequired(true)).addIntegerOption(o=>o.setName('winners').setDescription('מספר זוכים').setRequired(false)),
+  new SlashCommandBuilder().setName('endgiveaway').setDescription('סיום הגרלה').addStringOption(o=>o.setName('id').setDescription('מזהה ההגרלה').setRequired(true)),
+  new SlashCommandBuilder().setName('suggest').setDescription('הצעה לשרת').addStringOption(o=>o.setName('suggestion').setDescription('ההצעה שלך').setRequired(true)),
+  new SlashCommandBuilder().setName('afk').setDescription('הגדר מצב AFK').addStringOption(o=>o.setName('reason').setDescription('סיבה').setRequired(false)),
+  new SlashCommandBuilder().setName('reminder').setDescription('תזכורת').addStringOption(o=>o.setName('message').setDescription('מה לזכור').setRequired(true)).addIntegerOption(o=>o.setName('minutes').setDescription('בעוד כמה דקות').setRequired(true)),
+  new SlashCommandBuilder().setName('translate').setDescription('תרגם טקסט').addStringOption(o=>o.setName('text').setDescription('טקסט').setRequired(true)),
+  new SlashCommandBuilder().setName('qr').setDescription('צור QR Code').addStringOption(o=>o.setName('text').setDescription('טקסט/URL').setRequired(true)),
+  new SlashCommandBuilder().setName('color').setDescription('מידע על צבע').addStringOption(o=>o.setName('hex').setDescription('קוד hex').setRequired(true)),
+  new SlashCommandBuilder().setName('math').setDescription('חשב').addStringOption(o=>o.setName('expression').setDescription('ביטוי מתמטי').setRequired(true)),
+  new SlashCommandBuilder().setName('timestamp').setDescription('זמן עכשיו'),
+  new SlashCommandBuilder().setName('weather').setDescription('מזג אוויר').addStringOption(o=>o.setName('city').setDescription('עיר').setRequired(true)),
+
+  // SERVER MANAGEMENT (SYSTEM)
+  new SlashCommandBuilder().setName('status').setDescription('סטטוס השרת'),
+  new SlashCommandBuilder().setName('sysinfo').setDescription('מידע מלא על המערכת'),
+  new SlashCommandBuilder().setName('ps').setDescription('תהליכים פעילים'),
+  new SlashCommandBuilder().setName('top').setDescription('תהליכים כבדים'),
+  new SlashCommandBuilder().setName('df').setDescription('שימוש בדיסק'),
+  new SlashCommandBuilder().setName('netstat').setDescription('חיבורי רשת'),
+  new SlashCommandBuilder().setName('docker').setDescription('קונטיינרים'),
+  new SlashCommandBuilder().setName('dockerstats').setDescription('סטטיסטיקות Docker'),
+  new SlashCommandBuilder().setName('services').setDescription('שירותים פעילים'),
+  new SlashCommandBuilder().setName('logs').setDescription('לוגי שירות').addStringOption(o=>o.setName('service').setDescription('שם').setRequired(true)),
+  new SlashCommandBuilder().setName('restart').setDescription('הפעל מחדש שירות').addStringOption(o=>o.setName('service').setDescription('שם').setRequired(true)),
+  new SlashCommandBuilder().setName('exec').setDescription('הרץ פקודה (Admin)').addStringOption(o=>o.setName('command').setDescription('הפקודה').setRequired(true)),
+  new SlashCommandBuilder().setName('kill').setDescription('הרוג תהליך').addIntegerOption(o=>o.setName('pid').setDescription('PID').setRequired(true)),
+  new SlashCommandBuilder().setName('pinghost').setDescription('Ping לhost').addStringOption(o=>o.setName('host').setDescription('כתובת').setRequired(true)),
+
+  // SHOP
+  new SlashCommandBuilder().setName('shop').setDescription('חנות מוצרים'),
+  new SlashCommandBuilder().setName('buy').setDescription('רכישת מוצר').addStringOption(o=>o.setName('product').setDescription('מזהה').setRequired(true)),
+  new SlashCommandBuilder().setName('products').setDescription('רשימת מוצרים'),
+  new SlashCommandBuilder().setName('price').setDescription('מחיר מוצר').addStringOption(o=>o.setName('product').setDescription('מזהה').setRequired(true)),
+
+  // VERIFY
+  new SlashCommandBuilder().setName('setup-verify').setDescription('הגדרת מערכת אימות לשרת (Admin)').addRoleOption(o=>o.setName('role').setDescription('תפקיד Verified').setRequired(true)).addChannelOption(o=>o.setName('channel').setDescription('ערוץ אימות (ברירת מחדל: נוצר אוטומטית)').setRequired(false)),
+  new SlashCommandBuilder().setName('verify-stats').setDescription('סטטיסטיקות אימות'),
+  new SlashCommandBuilder().setName('unverify').setDescription('הסרת אימות ממשתמש (Admin)').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)),
+].map(c=>c.toJSON());
+
+// ─── Register ─────────────────────────────────────────────────────────────────
+const rest = new REST({version:'10'}).setToken(TOKEN);
+async function registerCommands() {
+  try {
+    await rest.put(Routes.applicationCommands(CLIENT_ID),{body:commands});
+    console.log(`✅ ${commands.length} commands רשומים!`);
+  } catch(e){console.error('❌ שגיאה:',e);}
+}
+
+// ─── Data ─────────────────────────────────────────────────────────────────────
+const jokes = ['למה המדען לא סומך על אטומים? כי הם מרכיבים הכל!','מה אומר אפס לשמונה? יפה החגורה שלך!','למה הדג לא יכול לשחק טניס? כי הוא מפחד מהרשת!','מה ההבדל בין פיל לתפוח? אחד כבד ואחד אדום!'];
+const quotes = ['הדרך הטובה ביותר לנבא את העתיד היא ליצור אותו - אברהם לינקולן','אל תחכה. הזמן לעולם לא יהיה מושלם - נפוליון היל','הצלחה היא לא סופית, הכישלון אינו קטלני - וינסטון צ\'רצ\'יל','אם אתה לא יכול לעוף, רוץ. אם לא יכול לרוץ, לך - מרטין לות\'ר קינג'];
+const facts = ['דבורים יכולות לזהות פנים אנושיות!','האוקטופוס יש לו שלושה לבבות!','הבנאנה היא מבחינה טכנית עשב!','גמל יכול לשתות 200 ליטר מים ב-3 דקות!'];
+const roasts = ['אתה כל כך משעמם שספר הטלפון שלך כולל אותך בסעיף "אין עניין"!','אתה מביא שמחה לכולם... כשאתה עוזב!','אם טיפשות היתה כואבת, אתה היית צועק כל הזמן!'];
+const compliments = ['אתה מדהים! 🌟','העולם טוב יותר בגללך! 💫','אתה מקור השראה לכולם! ⭐'];
 
 // ─── Ready ────────────────────────────────────────────────────────────────────
 client.once('ready', async () => {
-  console.log(`✅ Discord Bot מחובר כ: ${client.user?.tag}`);
-  client.user?.setActivity('By Yaniv 🚀', { type: ActivityType.Watching });
+  console.log(`✅ Discord Bot By Yaniv מחובר: ${client.user?.tag}`);
+  client.user?.setActivity(`${commands.length} פקודות | By Yaniv`, {type:ActivityType.Watching});
   await registerCommands();
 });
 
-// ─── Slash Command Handler ────────────────────────────────────────────────────
+// ─── Handler ──────────────────────────────────────────────────────────────────
 client.on('interactionCreate', async (interaction: any) => {
   if (!interaction.isChatInputCommand()) return;
-
-  const { commandName, member, guild } = interaction;
-
+  const {commandName, member, guild, channel, user} = interaction;
   await interaction.deferReply();
 
-  // ─── /help ────────────────────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════
+  //  INFO
+  // ══════════════════════════════════════════════════════
   if (commandName === 'help') {
-    const embed = new EmbedBuilder()
-      .setTitle('🤖 Yaniv Bot — כל הפקודות')
-      .setColor(0x667eea)
-      .setDescription('_Bot by Yaniv_')
+    const e = new EmbedBuilder().setTitle('🤖 Yaniv Bot — כל הפקודות').setColor(0x667eea)
       .addFields(
-        { name: '📊 שרת', value: '/status /uptime /ps /top /df /netstat', inline: false },
-        { name: '🐋 Docker', value: '/docker /dockerstats', inline: false },
-        { name: '⚙️ שירותים', value: '/services /restart /logs', inline: false },
-        { name: '🔧 ניהול', value: '/exec /kill /ping_host', inline: false },
-        { name: '👥 משתמשים', value: '/kick /ban /mute /role /clear /announce', inline: false },
-        { name: '🖥️ שרת דיסקורד', value: '/serverinfo /userinfo /members', inline: false },
-        { name: '🛒 חנות', value: '/shop /buy', inline: false },
+        {name:'ℹ️ מידע',value:'`/serverinfo` `/userinfo` `/avatar` `/roleinfo` `/channels` `/roles` `/boosts` `/emojis`',inline:false},
+        {name:'🔨 מודרציה',value:'`/kick` `/ban` `/unban` `/mute` `/unmute` `/warn` `/warnings` `/clear` `/lock` `/unlock` `/slowmode` `/nuke`',inline:false},
+        {name:'🎭 תפקידים',value:'`/role` `/addrole` `/removerole` `/createrole` `/delrole`',inline:false},
+        {name:'📢 ערוצים',value:'`/createchannel` `/delchannel` `/renamechannel` `/topic` `/hide` `/show`',inline:false},
+        {name:'🎉 פאן',value:'`/8ball` `/roll` `/flip` `/rps` `/joke` `/quote` `/fact` `/rate` `/choose` `/ship` `/hug` `/slap` `/roast` `/compliment` `/meme` `/tictactoe`',inline:false},
+        {name:'🛠️ כלים',value:'`/poll` `/giveaway` `/announce` `/embed` `/suggest` `/afk` `/reminder` `/math` `/color` `/qr` `/translate` `/timestamp`',inline:false},
+        {name:'🖥️ שרת',value:'`/status` `/ps` `/top` `/df` `/docker` `/exec` `/kill` `/logs` `/restart` `/pinghost`',inline:false},
+        {name:'🛒 חנות',value:'`/shop` `/buy` `/products` `/price`',inline:false},
+        {name:'🛡️ אימות',value:'`/setup-verify` `/verify-stats` `/unverify`',inline:false},
       )
-      .setFooter({ text: 'Made with ❤️ by Yaniv' });
-    return interaction.editReply({ embeds: [embed] });
+      .setFooter({text:`${commands.length} פקודות | Bot by Yaniv 🚀`});
+    return interaction.editReply({embeds:[e]});
   }
 
-  // ─── /about ───────────────────────────────────────────────────────────────
   if (commandName === 'about') {
-    const embed = new EmbedBuilder()
-      .setTitle('🤖 אודות Yaniv Bot')
-      .setColor(0x764ba2)
+    const e = new EmbedBuilder().setTitle('🤖 Yaniv Bot v3.0').setColor(0x764ba2)
+      .setDescription('בוט רב-תכליתי לניהול שרתים, מודרציה, פאן ועסקים')
       .addFields(
-        { name: '👨‍💻 יוצר', value: 'Yaniv', inline: true },
-        { name: '🚀 גרסה', value: '2.0.0', inline: true },
-        { name: '💻 Platform', value: 'Discord + Telegram', inline: true },
-        { name: '✅ יכולות', value: 'ניהול שרתים, Docker, חנות, תשלומים, מוד', inline: false },
+        {name:'👨‍💻 יוצר',value:'Yaniv',inline:true},
+        {name:'🚀 גרסה',value:'3.0.0',inline:true},
+        {name:'📊 פקודות',value:`${commands.length}+`,inline:true},
+        {name:'⚡ Ping',value:`${client.ws.ping}ms`,inline:true},
+        {name:'🖥️ שרתים',value:`${client.guilds.cache.size}`,inline:true},
+        {name:'👥 משתמשים',value:`${client.users.cache.size}`,inline:true},
       )
-      .setFooter({ text: 'Made with ❤️ by Yaniv' });
-    return interaction.editReply({ embeds: [embed] });
+      .setFooter({text:'Made with ❤️ by Yaniv'});
+    return interaction.editReply({embeds:[e]});
   }
 
-  // ─── /ping ────────────────────────────────────────────────────────────────
   if (commandName === 'ping') {
-    const latency = Date.now() - interaction.createdTimestamp;
-    const embed = new EmbedBuilder()
-      .setTitle('🏓 Pong!')
-      .setColor(0x00ff00)
-      .addFields(
-        { name: '⚡ Latency', value: `${latency}ms`, inline: true },
-        { name: '💓 API', value: `${Math.round(client.ws.ping)}ms`, inline: true },
-      )
-      .setFooter({ text: 'By Yaniv' });
-    return interaction.editReply({ embeds: [embed] });
+    const lat = Date.now()-interaction.createdTimestamp;
+    return interaction.editReply({embeds:[embed('🏓 Pong!',`⚡ Latency: **${lat}ms**\n💓 API: **${Math.round(client.ws.ping)}ms**`,0x00ff00)]});
   }
 
-  // ─── /status ──────────────────────────────────────────────────────────────
+  if (commandName === 'uptime') {
+    return interaction.editReply({embeds:[embed('⏱️ Uptime',`Bot: **${formatUptime(process.uptime())}**\nServer: **${formatUptime(os.uptime())}**`)]});
+  }
+
+  if (commandName === 'version') {
+    return interaction.editReply({embeds:[embed('📦 גרסה','**Bot:** v3.0.0\n**Node.js:** '+process.version+'\n**discord.js:** v14')]});
+  }
+
+  if (commandName === 'invite') {
+    return interaction.editReply({embeds:[embed('📨 הזמן את הבוט',`[לחץ כאן להזמנה](https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&permissions=8&scope=bot%20applications.commands)`)]});
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  SERVER INFO
+  // ══════════════════════════════════════════════════════
+  if (commandName === 'serverinfo') {
+    const g = guild;
+    const e = new EmbedBuilder().setTitle(`🖥️ ${g?.name}`).setColor(0x5865f2)
+      .setThumbnail(g?.iconURL()||'')
+      .addFields(
+        {name:'👑 בעלים',value:`<@${g?.ownerId}>`,inline:true},
+        {name:'👥 חברים',value:`${g?.memberCount}`,inline:true},
+        {name:'📅 נוצר',value:g?.createdAt?.toLocaleDateString('he-IL')||'N/A',inline:true},
+        {name:'📢 ערוצים',value:`${g?.channels?.cache?.size}`,inline:true},
+        {name:'🎭 תפקידים',value:`${g?.roles?.cache?.size}`,inline:true},
+        {name:'😀 אמוג\'ים',value:`${g?.emojis?.cache?.size}`,inline:true},
+        {name:'🚀 בוסטים',value:`${g?.premiumSubscriptionCount||0} (רמה ${g?.premiumTier||0})`,inline:true},
+        {name:'🔒 אימות',value:`${g?.verificationLevel}`,inline:true},
+        {name:'🆔 ID',value:`${g?.id}`,inline:true},
+      ).setFooter({text:'Bot by Yaniv'}).setTimestamp();
+    return interaction.editReply({embeds:[e]});
+  }
+
+  if (commandName === 'membercount') {
+    const online = guild?.members?.cache?.filter((m:any)=>m.presence?.status==='online').size||0;
+    return interaction.editReply({embeds:[embed('👥 חברים',`סה"כ: **${guild?.memberCount}**\nאונליין: **${online}**`)]});
+  }
+
+  if (commandName === 'channelinfo') {
+    const ch = channel;
+    return interaction.editReply({embeds:[embed('📢 מידע ערוץ',`שם: **#${ch?.name}**\nID: **${ch?.id}**\nסוג: **${ch?.type}**\nנוצר: **${ch?.createdAt?.toLocaleDateString('he-IL')}**`)]});
+  }
+
+  if (commandName === 'roleinfo') {
+    const role = interaction.options.getRole('role');
+    return interaction.editReply({embeds:[embed('🎭 מידע תפקיד',`שם: **${role.name}**\nצבע: **${role.hexColor}**\nחברים: **${role.members?.size}**\nID: **${role.id}**`)]});
+  }
+
+  if (commandName === 'roles') {
+    const r = guild?.roles?.cache?.sort((a:any,b:any)=>b.position-a.position).map((r:any)=>r.name).join(', ')||'אין';
+    return interaction.editReply({embeds:[embed('🎭 תפקידים',r.slice(0,2000))]});
+  }
+
+  if (commandName === 'channels') {
+    const text = guild?.channels?.cache?.filter((c:any)=>c.type===0).map((c:any)=>`#${c.name}`).join(', ')||'אין';
+    return interaction.editReply({embeds:[embed('📢 ערוצים',text.slice(0,2000))]});
+  }
+
+  if (commandName === 'emojis') {
+    const e = guild?.emojis?.cache?.map((e:any)=>`<:${e.name}:${e.id}>`).join(' ')||'אין אמוג\'ים';
+    return interaction.editReply({embeds:[embed('😀 אמוג\'ים',e.slice(0,2000))]});
+  }
+
+  if (commandName === 'boosts') {
+    return interaction.editReply({embeds:[embed('🚀 בוסטים',`בוסטים: **${guild?.premiumSubscriptionCount||0}**\nרמה: **${guild?.premiumTier||0}**`)]});
+  }
+
+  if (commandName === 'icon') {
+    const e = new EmbedBuilder().setTitle(`🖼️ תמונת ${guild?.name}`).setImage(guild?.iconURL({size:1024})||'').setColor(0x667eea).setFooter({text:'By Yaniv'});
+    return interaction.editReply({embeds:[e]});
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  USER INFO
+  // ══════════════════════════════════════════════════════
+  if (commandName === 'userinfo' || commandName === 'whois') {
+    const u = interaction.options.getUser('user')||user;
+    const m = guild?.members?.cache?.get(u.id);
+    const e = new EmbedBuilder().setTitle(`👤 ${u.username}`).setThumbnail(u.displayAvatarURL({size:256})).setColor(0x5865f2)
+      .addFields(
+        {name:'🆔 ID',value:u.id,inline:true},
+        {name:'📅 נרשם',value:u.createdAt.toLocaleDateString('he-IL'),inline:true},
+        {name:'📅 הצטרף',value:m?.joinedAt?.toLocaleDateString('he-IL')||'N/A',inline:true},
+        {name:'🎭 תפקידים',value:m?.roles?.cache?.map((r:any)=>r.name).filter((n:string)=>n!=='@everyone').join(', ')||'אין',inline:false},
+        {name:'🤖 בוט?',value:u.bot?'כן':'לא',inline:true},
+      ).setFooter({text:'By Yaniv'});
+    return interaction.editReply({embeds:[e]});
+  }
+
+  if (commandName === 'avatar') {
+    const u = interaction.options.getUser('user')||user;
+    const e = new EmbedBuilder().setTitle(`🖼️ תמונת ${u.username}`).setImage(u.displayAvatarURL({size:1024})).setColor(0x667eea).setFooter({text:'By Yaniv'});
+    return interaction.editReply({embeds:[e]});
+  }
+
+  if (commandName === 'banner') {
+    const u = await (interaction.options.getUser('user')||user).fetch();
+    const bannerUrl = u.bannerURL({size:1024});
+    if (!bannerUrl) return interaction.editReply({embeds:[errEmbed('למשתמש זה אין באנר')]});
+    const e = new EmbedBuilder().setTitle(`🎨 באנר של ${u.username}`).setImage(bannerUrl).setColor(0x667eea).setFooter({text:'By Yaniv'});
+    return interaction.editReply({embeds:[e]});
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  MODERATION
+  // ══════════════════════════════════════════════════════
+  if (!isMod(member) && ['kick','ban','unban','mute','unmute','warn','clearwarns','clear','slowmode','lock','unlock','hide','show','nuke','move','deafen','bans','createrole','delrole','delchannel','renamechannel','topic','announce','exec','kill','restart','logs'].includes(commandName)) {
+    return interaction.editReply({embeds:[errEmbed('אין לך הרשאת מודרציה')]});
+  }
+
+  if (commandName === 'kick') {
+    const u = interaction.options.getUser('user');
+    const reason = interaction.options.getString('reason')||'ללא סיבה';
+    const m = guild?.members?.cache?.get(u.id);
+    await m?.kick(reason);
+    return interaction.editReply({embeds:[embed('👢 Kick',`**${u.username}** הוצא מהשרת\nסיבה: ${reason}`,0xff6b35)]});
+  }
+
+  if (commandName === 'ban') {
+    const u = interaction.options.getUser('user');
+    const reason = interaction.options.getString('reason')||'ללא סיבה';
+    await guild?.members?.ban(u.id,{reason});
+    return interaction.editReply({embeds:[embed('🔨 Ban',`**${u.username}** נחסם\nסיבה: ${reason}`,0xff0000)]});
+  }
+
+  if (commandName === 'unban') {
+    const id = interaction.options.getString('userid');
+    await guild?.members?.unban(id);
+    return interaction.editReply({embeds:[embed('✅ Unban',`משתמש ${id} שוחרר`,0x00ff00)]});
+  }
+
+  if (commandName === 'mute') {
+    const u = interaction.options.getUser('user');
+    const min = interaction.options.getInteger('minutes')||10;
+    const m = guild?.members?.cache?.get(u.id);
+    await m?.timeout(min*60000,'Muted by Yaniv Bot');
+    return interaction.editReply({embeds:[embed('🔇 Mute',`**${u.username}** הושתק ל-**${min}** דקות`,0xffa500)]});
+  }
+
+  if (commandName === 'unmute') {
+    const u = interaction.options.getUser('user');
+    const m = guild?.members?.cache?.get(u.id);
+    await m?.timeout(null);
+    return interaction.editReply({embeds:[embed('🔊 Unmute',`**${u.username}** בוטלה ההשתקה`,0x00ff00)]});
+  }
+
+  if (commandName === 'warn') {
+    const u = interaction.options.getUser('user');
+    const reason = interaction.options.getString('reason');
+    if (!warnings[u.id]) warnings[u.id]=[];
+    warnings[u.id].push(reason);
+    return interaction.editReply({embeds:[embed('⚠️ אזהרה',`**${u.username}** קיבל אזהרה\nסיבה: ${reason}\nסה"כ אזהרות: **${warnings[u.id].length}**`,0xffd700)]});
+  }
+
+  if (commandName === 'warnings') {
+    const u = interaction.options.getUser('user');
+    const w = warnings[u.id]||[];
+    return interaction.editReply({embeds:[embed('⚠️ אזהרות',w.length?w.map((w:string,i:number)=>`${i+1}. ${w}`).join('\n'):'אין אזהרות')]});
+  }
+
+  if (commandName === 'clearwarns') {
+    const u = interaction.options.getUser('user');
+    warnings[u.id]=[];
+    return interaction.editReply({embeds:[embed('✅ אזהרות נמחקו',`כל האזהרות של **${u.username}** נמחקו`,0x00ff00)]});
+  }
+
+  if (commandName === 'clear') {
+    const amount = interaction.options.getInteger('amount');
+    await channel?.bulkDelete(amount,true);
+    return interaction.editReply({embeds:[embed('🗑️ נמחקו',`**${amount}** הודעות נמחקו`,0xff6b35)]});
+  }
+
+  if (commandName === 'slowmode') {
+    const sec = interaction.options.getInteger('seconds');
+    await channel?.setRateLimitPerUser(sec);
+    return interaction.editReply({embeds:[embed('⏱️ Slowmode',sec===0?'Slowmode כובה':`Slowmode הוגדר ל-**${sec}** שניות`)]});
+  }
+
+  if (commandName === 'lock') {
+    await channel?.permissionOverwrites?.edit(guild?.roles?.everyone,{SendMessages:false});
+    return interaction.editReply({embeds:[embed('🔒 ערוץ נעול','הערוץ ננעל',0xff0000)]});
+  }
+
+  if (commandName === 'unlock') {
+    await channel?.permissionOverwrites?.edit(guild?.roles?.everyone,{SendMessages:true});
+    return interaction.editReply({embeds:[embed('🔓 ערוץ פתוח','הערוץ נפתח',0x00ff00)]});
+  }
+
+  if (commandName === 'hide') {
+    await channel?.permissionOverwrites?.edit(guild?.roles?.everyone,{ViewChannel:false});
+    return interaction.editReply({embeds:[embed('👁️ ערוץ הוסתר','הערוץ הוסתר',0xffa500)]});
+  }
+
+  if (commandName === 'show') {
+    await channel?.permissionOverwrites?.edit(guild?.roles?.everyone,{ViewChannel:true});
+    return interaction.editReply({embeds:[embed('👁️ ערוץ גלוי','הערוץ גלוי',0x00ff00)]});
+  }
+
+  if (commandName === 'nuke') {
+    const newChannel = await channel?.clone();
+    await channel?.delete();
+    await newChannel?.send({embeds:[embed('💣 Nuke!','ערוץ זה עבר nuke! 💥',0xff0000)]});
+    return;
+  }
+
+  if (commandName === 'bans') {
+    const bans = await guild?.bans?.fetch();
+    const list = bans?.map((b:any)=>`${b.user.username}: ${b.reason||'ללא סיבה'}`).join('\n')||'אין חסומים';
+    return interaction.editReply({embeds:[embed('🔨 חסומים',list.slice(0,2000))]});
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  ROLES
+  // ══════════════════════════════════════════════════════
+  if (commandName === 'role' || commandName === 'addrole') {
+    const u = interaction.options.getUser('user');
+    const role = interaction.options.getRole('role');
+    const m = guild?.members?.cache?.get(u.id);
+    if (m?.roles?.cache?.has(role.id)) {
+      await m?.roles?.remove(role.id);
+      return interaction.editReply({embeds:[embed('🎭 תפקיד הוסר',`**${role.name}** הוסר מ-**${u.username}**`,0xff6b35)]});
+    } else {
+      await m?.roles?.add(role.id);
+      return interaction.editReply({embeds:[embed('🎭 תפקיד נוסף',`**${role.name}** נוסף ל-**${u.username}**`,0x00ff00)]});
+    }
+  }
+
+  if (commandName === 'removerole') {
+    const u = interaction.options.getUser('user');
+    const role = interaction.options.getRole('role');
+    await guild?.members?.cache?.get(u.id)?.roles?.remove(role.id);
+    return interaction.editReply({embeds:[embed('🎭 תפקיד הוסר',`**${role.name}** הוסר מ-**${u.username}**`,0xff6b35)]});
+  }
+
+  if (commandName === 'createrole') {
+    const name = interaction.options.getString('name');
+    const color = interaction.options.getString('color')||'#667eea';
+    const role = await guild?.roles?.create({name,color,reason:'Created by Yaniv Bot'});
+    return interaction.editReply({embeds:[embed('✅ תפקיד נוצר',`תפקיד **${role?.name}** נוצר בהצלחה!`,0x00ff00)]});
+  }
+
+  if (commandName === 'delrole') {
+    const role = interaction.options.getRole('role');
+    await guild?.roles?.delete(role.id);
+    return interaction.editReply({embeds:[embed('🗑️ תפקיד נמחק',`תפקיד **${role.name}** נמחק`,0xff0000)]});
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  CHANNELS
+  // ══════════════════════════════════════════════════════
+  if (commandName === 'createchannel') {
+    const name = interaction.options.getString('name');
+    const type = interaction.options.getString('type')||'text';
+    const ch = await guild?.channels?.create({name, type: type==='voice'?2:0});
+    return interaction.editReply({embeds:[embed('✅ ערוץ נוצר',`**#${ch?.name}** נוצר!`,0x00ff00)]});
+  }
+
+  if (commandName === 'delchannel') {
+    const ch = interaction.options.getChannel('channel');
+    await guild?.channels?.delete(ch.id);
+    return interaction.editReply({embeds:[embed('🗑️ ערוץ נמחק',`**#${ch.name}** נמחק`,0xff0000)]});
+  }
+
+  if (commandName === 'renamechannel') {
+    const name = interaction.options.getString('name');
+    await channel?.setName(name);
+    return interaction.editReply({embeds:[embed('✏️ שם שונה',`הערוץ שונה ל-**${name}**`,0x00ff00)]});
+  }
+
+  if (commandName === 'topic') {
+    const topic = interaction.options.getString('topic');
+    await channel?.setTopic(topic);
+    return interaction.editReply({embeds:[embed('📝 תיאור עודכן',`תיאור הערוץ עודכן ל: **${topic}**`,0x00ff00)]});
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  FUN
+  // ══════════════════════════════════════════════════════
+  if (commandName === '8ball') {
+    const question = interaction.options.getString('question');
+    const answers = ['בהחלט כן! ✅','לא, בשום פנים ואופן! ❌','אולי... 🤔','בוודאי! 🎯','ספק רב 🌫️','הסימנים מצביעים על כן 👍','שאל מאוחר יותר ⏰','כן! 🟢','לא 🔴','הגורל לא ברור 🎱'];
+    return interaction.editReply({embeds:[embed('🎱 8Ball',`❓ **${question}**\n\n🎱 **${answers[Math.floor(Math.random()*answers.length)]}**`)]});
+  }
+
+  if (commandName === 'roll') {
+    const sides = interaction.options.getInteger('sides')||6;
+    const result = Math.floor(Math.random()*sides)+1;
+    return interaction.editReply({embeds:[embed('🎲 קוביה',`הטלת קוביה עם **${sides}** צלעות\nתוצאה: **${result}**`)]});
+  }
+
+  if (commandName === 'flip') {
+    const result = Math.random()<0.5?'👑 עץ':'🦅 פלי';
+    return interaction.editReply({embeds:[embed('🪙 מטבע',`התוצאה היא: **${result}**`)]});
+  }
+
+  if (commandName === 'rps') {
+    const choice = interaction.options.getString('choice');
+    const botChoices = ['אבן','נייר','מספריים'];
+    const botChoice = botChoices[Math.floor(Math.random()*3)];
+    let result = 'תיקו! 🤝';
+    if ((choice==='אבן'&&botChoice==='מספריים')||(choice==='נייר'&&botChoice==='אבן')||(choice==='מספריים'&&botChoice==='נייר')) result='ניצחת! 🎉';
+    else if (choice!==botChoice) result='הפסדת! 😅';
+    return interaction.editReply({embeds:[embed('✂️ אבן נייר מספריים',`אתה: **${choice}** | אני: **${botChoice}**\n${result}`)]});
+  }
+
+  if (commandName === 'joke') {
+    return interaction.editReply({embeds:[embed('😂 בדיחה',jokes[Math.floor(Math.random()*jokes.length)])]});
+  }
+
+  if (commandName === 'quote') {
+    return interaction.editReply({embeds:[embed('💭 ציטוט',quotes[Math.floor(Math.random()*quotes.length)])]});
+  }
+
+  if (commandName === 'fact') {
+    return interaction.editReply({embeds:[embed('🧠 עובדה',facts[Math.floor(Math.random()*facts.length)])]});
+  }
+
+  if (commandName === 'meme') {
+    const memes = ['https://i.imgflip.com/1bij.jpg','https://i.imgflip.com/26am.jpg','https://i.imgflip.com/1bh8.jpg'];
+    const e = new EmbedBuilder().setTitle('😂 מם אקראי').setImage(memes[Math.floor(Math.random()*memes.length)]).setColor(0xffd700).setFooter({text:'By Yaniv'});
+    return interaction.editReply({embeds:[e]});
+  }
+
+  if (commandName === 'rate') {
+    const thing = interaction.options.getString('thing');
+    const rate = Math.floor(Math.random()*101);
+    return interaction.editReply({embeds:[embed('⭐ דירוג',`**${thing}** קיבל ציון: **${rate}/100**\n${'⭐'.repeat(Math.round(rate/20))}`)]});
+  }
+
+  if (commandName === 'choose') {
+    const options = interaction.options.getString('options').split(',').map((o:string)=>o.trim());
+    const chosen = options[Math.floor(Math.random()*options.length)];
+    return interaction.editReply({embeds:[embed('🎯 בחירה',`מתוך: ${options.join(', ')}\n\nבחרתי: **${chosen}**`)]});
+  }
+
+  if (commandName === 'reverse') {
+    const text = interaction.options.getString('text');
+    return interaction.editReply({embeds:[embed('🔄 הפוך',text.split('').reverse().join(''))]});
+  }
+
+  if (commandName === 'ship') {
+    const u1 = interaction.options.getUser('user1');
+    const u2 = interaction.options.getUser('user2');
+    const pct = Math.floor(Math.random()*101);
+    const bar = '❤️'.repeat(Math.round(pct/10))+'🖤'.repeat(10-Math.round(pct/10));
+    return interaction.editReply({embeds:[embed('💕 Ship',`**${u1.username}** + **${u2.username}**\n${bar}\n**${pct}%** תאימות!`)]});
+  }
+
+  if (commandName === 'hug') {
+    const u = interaction.options.getUser('user');
+    return interaction.editReply({embeds:[embed('🤗 חיבוק',`**${user.username}** חיבק את **${u.username}** 🤗💕`,0xff69b4)]});
+  }
+
+  if (commandName === 'slap') {
+    const u = interaction.options.getUser('user');
+    return interaction.editReply({embeds:[embed('👋 סטירה',`**${user.username}** נתן סטירה ל-**${u.username}** 👋😤`,0xff6b35)]});
+  }
+
+  if (commandName === 'roast') {
+    const u = interaction.options.getUser('user');
+    return interaction.editReply({embeds:[embed('🔥 Roast',`**${u.username}**: ${roasts[Math.floor(Math.random()*roasts.length)]}`,0xff4500)]});
+  }
+
+  if (commandName === 'compliment') {
+    const u = interaction.options.getUser('user');
+    return interaction.editReply({embeds:[embed('💝 מחמאה',`**${u.username}**: ${compliments[Math.floor(Math.random()*compliments.length)]}`,0xff69b4)]});
+  }
+
+  if (commandName === 'random') {
+    const min = interaction.options.getInteger('min')||1;
+    const max = interaction.options.getInteger('max')||100;
+    return interaction.editReply({embeds:[embed('🎲 מספר אקראי',`**${Math.floor(Math.random()*(max-min+1)+min)}**\nבין ${min} ל-${max}`)]});
+  }
+
+  if (commandName === 'tictactoe') {
+    const opponent = interaction.options.getUser('opponent');
+    const board = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣'];
+    const display = `${board[0]}${board[1]}${board[2]}\n${board[3]}${board[4]}${board[5]}\n${board[6]}${board[7]}${board[8]}`;
+    return interaction.editReply({embeds:[embed('❌⭕ Tic Tac Toe',`**${user.username}** (❌) vs **${opponent.username}** (⭕)\n\n${display}\n\nתור של: **${user.username}**`)]});
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  UTILITY
+  // ══════════════════════════════════════════════════════
+  if (commandName === 'announce') {
+    if (!isAdmin(member)) return interaction.editReply({embeds:[errEmbed('נדרשות הרשאות Admin')]});
+    const message = interaction.options.getString('message');
+    const targetChannel = interaction.options.getChannel('channel')||channel;
+    const e = new EmbedBuilder().setTitle('📢 הכרזה').setDescription(message).setColor(0xffd700).setFooter({text:`הכרזה על ידי ${user.username} | By Yaniv`}).setTimestamp();
+    await targetChannel?.send({embeds:[e]});
+    return interaction.editReply({embeds:[embed('✅ נשלח',`הכרזה נשלחה ל-<#${targetChannel?.id}>`,0x00ff00)]});
+  }
+
+  if (commandName === 'embed') {
+    const title = interaction.options.getString('title');
+    const desc = interaction.options.getString('description');
+    const color = parseInt((interaction.options.getString('color')||'667eea').replace('#',''),16);
+    const e = new EmbedBuilder().setTitle(title).setDescription(desc).setColor(color).setFooter({text:`By ${user.username}`}).setTimestamp();
+    await channel?.send({embeds:[e]});
+    return interaction.editReply({embeds:[embed('✅ Embed נשלח','',0x00ff00)]});
+  }
+
+  if (commandName === 'poll') {
+    const question = interaction.options.getString('question');
+    const opts = (interaction.options.getString('options')||'כן,לא').split(',').map((o:string)=>o.trim());
+    const emojis = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣'];
+    const desc = opts.map((o:string,i:number)=>`${emojis[i]} **${o}**`).join('\n');
+    const e = embed('📊 סקר',`**${question}**\n\n${desc}`,0x00b4d8);
+    const msg = await channel?.send({embeds:[e]});
+    for (let i=0;i<Math.min(opts.length,5);i++) await msg?.react(emojis[i]);
+    return interaction.editReply({embeds:[embed('✅ סקר נשלח','',0x00ff00)]});
+  }
+
+  if (commandName === 'giveaway') {
+    const prize = interaction.options.getString('prize');
+    const minutes = interaction.options.getInteger('minutes');
+    const winners = interaction.options.getInteger('winners')||1;
+    const endTime = new Date(Date.now()+minutes*60000);
+    const e = embed('🎉 הגרלה!',`**פרס:** ${prize}\n**זוכים:** ${winners}\n**מסתיים:** <t:${Math.floor(endTime.getTime()/1000)}:R>\n\nלחץ 🎉 להשתתפות!`,0xffd700);
+    const msg = await channel?.send({embeds:[e]});
+    await msg?.react('🎉');
+    giveaways[msg?.id] = {prize,winners,endTime,messageId:msg?.id,channelId:channel?.id};
+    setTimeout(async()=>{
+      const gw = giveaways[msg?.id];
+      if(!gw) return;
+      const reactions = msg?.reactions?.cache?.get('🎉');
+      const users = await reactions?.users?.fetch();
+      const eligible = users?.filter((u:any)=>!u.bot).map((u:any)=>u);
+      const winnerList = eligible?.sort(()=>Math.random()-0.5).slice(0,winners)||[];
+      const winnerText = winnerList.length?winnerList.map((u:any)=>`<@${u.id}>`).join(', '):'אין משתתפים';
+      await channel?.send({embeds:[embed('🎊 הזוכים!',`פרס: **${prize}**\nזוכים: ${winnerText}`,0xffd700)]});
+    }, minutes*60000);
+    return interaction.editReply({embeds:[embed('✅ הגרלה נוצרה',`ההגרלה תסתיים בעוד **${minutes}** דקות`,0x00ff00)]});
+  }
+
+  if (commandName === 'suggest') {
+    const suggestion = interaction.options.getString('suggestion');
+    suggestions.push({user:user.username,text:suggestion,date:new Date()});
+    const e = embed('💡 הצעה חדשה',`מאת: **${user.username}**\n\n${suggestion}`,0x667eea);
+    await channel?.send({embeds:[e]});
+    await channel?.messages?.cache?.last()?.react('👍');
+    await channel?.messages?.cache?.last()?.react('👎');
+    return interaction.editReply({embeds:[embed('✅ הצעה נשלחה','תודה על ההצעה!',0x00ff00)]});
+  }
+
+  if (commandName === 'afk') {
+    const reason = interaction.options.getString('reason')||'AFK';
+    afkUsers[user.id] = reason;
+    return interaction.editReply({embeds:[embed('💤 AFK',`**${user.username}** הוגדר כ-AFK\nסיבה: ${reason}`,0xffa500)]});
+  }
+
+  if (commandName === 'reminder') {
+    const message = interaction.options.getString('message');
+    const minutes = interaction.options.getInteger('minutes');
+    setTimeout(()=>{
+      channel?.send({content:`⏰ <@${user.id}> תזכורת: **${message}**`});
+    },minutes*60000);
+    return interaction.editReply({embeds:[embed('⏰ תזכורת הוגדרה',`אזכיר לך **${message}** בעוד **${minutes}** דקות`,0x00ff00)]});
+  }
+
+  if (commandName === 'math') {
+    const expr = interaction.options.getString('expression');
+    try {
+      const result = eval(expr.replace(/[^0-9+\-*/().%]/g,''));
+      return interaction.editReply({embeds:[embed('🧮 חישוב',`**${expr}** = **${result}**`)]});
+    } catch {
+      return interaction.editReply({embeds:[errEmbed('ביטוי לא תקין')]});
+    }
+  }
+
+  if (commandName === 'color') {
+    const hex = interaction.options.getString('hex').replace('#','');
+    const color = parseInt(hex,16);
+    const r = parseInt(hex.slice(0,2),16);
+    const g = parseInt(hex.slice(2,4),16);
+    const b = parseInt(hex.slice(4,6),16);
+    const e = new EmbedBuilder().setTitle(`🎨 #${hex.toUpperCase()}`).setColor(color).addFields({name:'RGB',value:`rgb(${r}, ${g}, ${b})`,inline:true},{name:'HEX',value:`#${hex.toUpperCase()}`,inline:true}).setFooter({text:'By Yaniv'});
+    return interaction.editReply({embeds:[e]});
+  }
+
+  if (commandName === 'qr') {
+    const text = encodeURIComponent(interaction.options.getString('text'));
+    const url = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${text}`;
+    const e = new EmbedBuilder().setTitle('📱 QR Code').setImage(url).setColor(0x000000).setFooter({text:'By Yaniv'});
+    return interaction.editReply({embeds:[e]});
+  }
+
+  if (commandName === 'timestamp') {
+    const now = Math.floor(Date.now()/1000);
+    return interaction.editReply({embeds:[embed('🕐 זמן',`עכשיו: <t:${now}:F>\nTimestamp: **${now}**`)]});
+  }
+
+  if (commandName === 'weather') {
+    const city = interaction.options.getString('city');
+    return interaction.editReply({embeds:[embed('🌤️ מזג אוויר',`**${city}**\n🌡️ טמפ': **${Math.floor(Math.random()*30+5)}°C**\n💧 לחות: **${Math.floor(Math.random()*60+30)}%**\n💨 רוח: **${Math.floor(Math.random()*30)}km/h**\n\n_נתונים לדוגמה_`)]});
+  }
+
+  if (commandName === 'translate') {
+    const text = interaction.options.getString('text');
+    return interaction.editReply({embeds:[embed('🌐 תרגום',`**מקור:** ${text}\n\n_לתרגום אמיתי חבר את Google Translate API_`)]});
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  SYSTEM
+  // ══════════════════════════════════════════════════════
   if (commandName === 'status') {
     const cpus = os.cpus();
     const totalMem = os.totalmem();
     const freeMem = os.freemem();
-    const usedMem = totalMem - freeMem;
-    const load = os.loadavg();
     let disk = 'N/A';
-    try { disk = execSync('df -h /').toString().split('\n')[1]; } catch {}
-
-    const embed = new EmbedBuilder()
-      .setTitle('📊 סטטוס שרת')
-      .setColor(0x00b4d8)
+    try{disk=execSync('df -h /').toString().split('\n')[1];}catch{}
+    const e = new EmbedBuilder().setTitle('📊 סטטוס שרת').setColor(0x00b4d8)
       .addFields(
-        { name: '🖥️ CPU', value: `${cpus[0]?.model || 'N/A'} (${cpus.length} ליבות)`, inline: false },
-        { name: '📈 עומס', value: load.map(l => l.toFixed(2)).join(' / '), inline: true },
-        { name: '💾 RAM', value: `${formatBytes(usedMem)} / ${formatBytes(totalMem)}`, inline: true },
-        { name: '💿 דיסק', value: disk, inline: false },
-        { name: '⏱️ Uptime', value: formatUptime(os.uptime()), inline: true },
-        { name: '🏠 Hostname', value: os.hostname(), inline: true },
-      )
-      .setFooter({ text: 'By Yaniv' })
-      .setTimestamp();
-    return interaction.editReply({ embeds: [embed] });
+        {name:'🖥️ CPU',value:`${cpus[0]?.model||'N/A'} (${cpus.length} ליבות)`,inline:false},
+        {name:'💾 RAM',value:`${formatBytes(totalMem-freeMem)} / ${formatBytes(totalMem)}`,inline:true},
+        {name:'⏱️ Uptime',value:formatUptime(os.uptime()),inline:true},
+        {name:'💿 דיסק',value:disk,inline:false},
+        {name:'🏠 Host',value:os.hostname(),inline:true},
+        {name:'🐧 OS',value:`${os.type()} ${os.release()}`,inline:true},
+      ).setFooter({text:'By Yaniv'}).setTimestamp();
+    return interaction.editReply({embeds:[e]});
   }
 
-  // ─── /uptime ──────────────────────────────────────────────────────────────
-  if (commandName === 'uptime') {
-    const out = await runCmd('uptime');
-    const embed = new EmbedBuilder().setTitle('⏱️ Uptime').setDescription(`\`\`\`${out}\`\`\``).setColor(0x00ff00).setFooter({ text: 'By Yaniv' });
-    return interaction.editReply({ embeds: [embed] });
+  if (commandName === 'sysinfo') {
+    if (!isAdmin(member)) return interaction.editReply({embeds:[errEmbed('נדרשות הרשאות Admin')]});
+    const out = await runCmd('uname -a && echo "---" && free -h && echo "---" && df -h');
+    return interaction.editReply({content:`\`\`\`\n${out}\n\`\`\``});
   }
 
-  // ─── /ps ──────────────────────────────────────────────────────────────────
+  if (!isAdmin(member) && ['ps','top','df','netstat','docker','dockerstats','services','logs','restart','exec','kill'].includes(commandName)) {
+    return interaction.editReply({embeds:[errEmbed('נדרשות הרשאות Admin')]});
+  }
+
   if (commandName === 'ps') {
     const out = await runCmd('ps aux --sort=-%cpu | head -15');
-    return interaction.editReply({ content: `\`\`\`\n${out}\n\`\`\`` });
+    return interaction.editReply({content:`\`\`\`\n${out}\n\`\`\``});
   }
 
-  // ─── /top ─────────────────────────────────────────────────────────────────
   if (commandName === 'top') {
     const out = await runCmd('ps aux --sort=-%cpu | head -11');
-    return interaction.editReply({ content: `\`\`\`\n${out}\n\`\`\`` });
+    return interaction.editReply({content:`\`\`\`\n${out}\n\`\`\``});
   }
 
-  // ─── /df ──────────────────────────────────────────────────────────────────
   if (commandName === 'df') {
     const out = await runCmd('df -h');
-    return interaction.editReply({ content: `\`\`\`\n${out}\n\`\`\`` });
+    return interaction.editReply({content:`\`\`\`\n${out}\n\`\`\``});
   }
 
-  // ─── /netstat ─────────────────────────────────────────────────────────────
   if (commandName === 'netstat') {
     const out = await runCmd('ss -tulnp 2>/dev/null | head -20');
-    return interaction.editReply({ content: `\`\`\`\n${out}\n\`\`\`` });
+    return interaction.editReply({content:`\`\`\`\n${out}\n\`\`\``});
   }
 
-  // ─── /docker ──────────────────────────────────────────────────────────────
   if (commandName === 'docker') {
     const out = await runCmd('docker ps --format "table {{.Names}}\\t{{.Image}}\\t{{.Status}}" 2>&1');
-    return interaction.editReply({ content: `\`\`\`\n${out}\n\`\`\`` });
+    return interaction.editReply({content:`\`\`\`\n${out}\n\`\`\``});
   }
 
-  // ─── /dockerstats ─────────────────────────────────────────────────────────
   if (commandName === 'dockerstats') {
     const out = await runCmd('docker stats --no-stream 2>&1');
-    return interaction.editReply({ content: `\`\`\`\n${out}\n\`\`\`` });
+    return interaction.editReply({content:`\`\`\`\n${out}\n\`\`\``});
   }
 
-  // ─── /services ────────────────────────────────────────────────────────────
   if (commandName === 'services') {
     const out = await runCmd('systemctl list-units --type=service --state=running 2>/dev/null | head -20');
-    return interaction.editReply({ content: `\`\`\`\n${out}\n\`\`\`` });
+    return interaction.editReply({content:`\`\`\`\n${out}\n\`\`\``});
   }
 
-  // ─── /ping_host ───────────────────────────────────────────────────────────
-  if (commandName === 'ping_host') {
-    const host = interaction.options.getString('host');
-    const out = await runCmd(`ping -c 4 "${host}" 2>&1`);
-    return interaction.editReply({ content: `\`\`\`\n${out}\n\`\`\`` });
-  }
-
-  // ─── Admin commands ───────────────────────────────────────────────────────
-  if (!isAdmin(member)) {
-    return interaction.editReply({ content: '⛔ אין לך הרשאת Admin.' });
-  }
-
-  // ─── /exec ────────────────────────────────────────────────────────────────
-  if (commandName === 'exec') {
-    const cmd = interaction.options.getString('command');
-    const out = await runCmd(cmd);
-    return interaction.editReply({ content: `\`\`\`\n$ ${cmd}\n\n${out}\n\`\`\`` });
-  }
-
-  // ─── /kill ────────────────────────────────────────────────────────────────
-  if (commandName === 'kill') {
-    const pid = interaction.options.getInteger('pid');
-    const out = await runCmd(`kill -15 ${pid} && echo "✅ SIGTERM sent to PID ${pid}"`);
-    return interaction.editReply({ content: `\`\`\`\n${out}\n\`\`\`` });
-  }
-
-  // ─── /restart ─────────────────────────────────────────────────────────────
-  if (commandName === 'restart') {
-    const svc = interaction.options.getString('service');
-    const out = await runCmd(`systemctl restart "${svc}" 2>&1 && echo "✅ ${svc} הופעל מחדש"`);
-    return interaction.editReply({ content: `\`\`\`\n${out}\n\`\`\`` });
-  }
-
-  // ─── /logs ────────────────────────────────────────────────────────────────
   if (commandName === 'logs') {
     const svc = interaction.options.getString('service');
     const out = await runCmd(`journalctl -u "${svc}" -n 30 --no-pager 2>&1`);
-    return interaction.editReply({ content: `\`\`\`\n${out}\n\`\`\`` });
+    return interaction.editReply({content:`\`\`\`\n${out}\n\`\`\``});
   }
 
-  // ─── /serverinfo ──────────────────────────────────────────────────────────
-  if (commandName === 'serverinfo') {
-    const embed = new EmbedBuilder()
-      .setTitle(`🖥️ ${guild?.name}`)
-      .setThumbnail(guild?.iconURL() || '')
-      .setColor(0x5865f2)
-      .addFields(
-        { name: '👑 בעלים', value: `<@${guild?.ownerId}>`, inline: true },
-        { name: '👥 חברים', value: `${guild?.memberCount}`, inline: true },
-        { name: '📅 נוצר', value: guild?.createdAt?.toLocaleDateString('he-IL') || 'N/A', inline: true },
-        { name: '📢 ערוצים', value: `${guild?.channels?.cache?.size}`, inline: true },
-        { name: '🎭 תפקידים', value: `${guild?.roles?.cache?.size}`, inline: true },
-        { name: '😀 אמוג\'ים', value: `${guild?.emojis?.cache?.size}`, inline: true },
-      )
-      .setFooter({ text: 'By Yaniv' })
-      .setTimestamp();
-    return interaction.editReply({ embeds: [embed] });
+  if (commandName === 'restart') {
+    const svc = interaction.options.getString('service');
+    const out = await runCmd(`systemctl restart "${svc}" 2>&1 && echo "✅ ${svc} הופעל מחדש"`);
+    return interaction.editReply({embeds:[embed('🔄 Restart',out)]});
   }
 
-  // ─── /userinfo ────────────────────────────────────────────────────────────
-  if (commandName === 'userinfo') {
-    const user = interaction.options.getUser('user') || interaction.user;
-    const m = guild?.members?.cache?.get(user.id);
-    const embed = new EmbedBuilder()
-      .setTitle(`👤 ${user.username}`)
-      .setThumbnail(user.displayAvatarURL())
-      .setColor(0x5865f2)
-      .addFields(
-        { name: '🆔 ID', value: user.id, inline: true },
-        { name: '📅 הצטרף לדיסקורד', value: user.createdAt.toLocaleDateString('he-IL'), inline: true },
-        { name: '📅 הצטרף לשרת', value: m?.joinedAt?.toLocaleDateString('he-IL') || 'N/A', inline: true },
-        { name: '🎭 תפקידים', value: m?.roles?.cache?.map((r: any) => r.name).join(', ') || 'אין', inline: false },
-      )
-      .setFooter({ text: 'By Yaniv' });
-    return interaction.editReply({ embeds: [embed] });
+  if (commandName === 'exec') {
+    const cmd = interaction.options.getString('command');
+    const out = await runCmd(cmd);
+    return interaction.editReply({content:`\`\`\`\n$ ${cmd}\n\n${out}\n\`\`\``});
   }
 
-  // ─── /members ─────────────────────────────────────────────────────────────
-  if (commandName === 'members') {
-    return interaction.editReply({ content: `👥 **${guild?.memberCount}** חברים בשרת **${guild?.name}**` });
+  if (commandName === 'kill') {
+    const pid = interaction.options.getInteger('pid');
+    const out = await runCmd(`kill -15 ${pid} && echo "✅ SIGTERM sent to PID ${pid}"`);
+    return interaction.editReply({embeds:[embed('💀 Kill',out)]});
   }
 
-  // ─── /clear ───────────────────────────────────────────────────────────────
-  if (commandName === 'clear') {
-    const amount = interaction.options.getInteger('amount');
-    await interaction.channel?.bulkDelete(amount, true);
-    return interaction.editReply({ content: `🗑️ נמחקו **${amount}** הודעות.` });
+  if (commandName === 'pinghost') {
+    const host = interaction.options.getString('host');
+    const out = await runCmd(`ping -c 4 "${host}" 2>&1`);
+    return interaction.editReply({content:`\`\`\`\n${out}\n\`\`\``});
   }
 
-  // ─── /kick ────────────────────────────────────────────────────────────────
-  if (commandName === 'kick') {
-    const user = interaction.options.getUser('user');
-    const reason = interaction.options.getString('reason') || 'ללא סיבה';
-    const m = guild?.members?.cache?.get(user.id);
-    await m?.kick(reason);
-    const embed = new EmbedBuilder().setTitle('👢 Kick').setColor(0xff6b35).addFields({ name: 'משתמש', value: user.username, inline: true }, { name: 'סיבה', value: reason, inline: true }).setFooter({ text: 'By Yaniv' });
-    return interaction.editReply({ embeds: [embed] });
-  }
-
-  // ─── /ban ─────────────────────────────────────────────────────────────────
-  if (commandName === 'ban') {
-    const user = interaction.options.getUser('user');
-    const reason = interaction.options.getString('reason') || 'ללא סיבה';
-    await guild?.members?.ban(user.id, { reason });
-    const embed = new EmbedBuilder().setTitle('🔨 Ban').setColor(0xff0000).addFields({ name: 'משתמש', value: user.username, inline: true }, { name: 'סיבה', value: reason, inline: true }).setFooter({ text: 'By Yaniv' });
-    return interaction.editReply({ embeds: [embed] });
-  }
-
-  // ─── /mute ────────────────────────────────────────────────────────────────
-  if (commandName === 'mute') {
-    const user = interaction.options.getUser('user');
-    const minutes = interaction.options.getInteger('minutes') || 10;
-    const m = guild?.members?.cache?.get(user.id);
-    await m?.timeout(minutes * 60 * 1000, 'Muted by Yaniv Bot');
-    return interaction.editReply({ content: `🔇 **${user.username}** הושתק ל-**${minutes}** דקות.` });
-  }
-
-  // ─── /role ────────────────────────────────────────────────────────────────
-  if (commandName === 'role') {
-    const user = interaction.options.getUser('user');
-    const role = interaction.options.getRole('role');
-    const m = guild?.members?.cache?.get(user.id);
-    await m?.roles?.add(role.id);
-    return interaction.editReply({ content: `✅ תפקיד **${role.name}** נוסף ל-**${user.username}**` });
-  }
-
-  // ─── /announce ────────────────────────────────────────────────────────────
-  if (commandName === 'announce') {
-    const message = interaction.options.getString('message');
-    const embed = new EmbedBuilder()
-      .setTitle('📢 הכרזה')
-      .setDescription(message)
-      .setColor(0xffd700)
-      .setFooter({ text: `הכרזה על ידי ${interaction.user.username} | By Yaniv` })
-      .setTimestamp();
-
-    const channels = guild?.channels?.cache?.filter((c: any) => c.type === 0);
-    let sent = 0;
-    for (const [, ch] of channels || []) {
-      try { await (ch as any).send({ embeds: [embed] }); sent++; } catch {}
-    }
-    return interaction.editReply({ content: `📢 הכרזה נשלחה ל-**${sent}** ערוצים!` });
-  }
-
-  // ─── /shop ────────────────────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════
+  //  SHOP
+  // ══════════════════════════════════════════════════════
   if (commandName === 'shop') {
-    const embed = new EmbedBuilder()
-      .setTitle('🛒 חנות Yaniv Bot')
-      .setColor(0x667eea)
-      .setDescription('רכוש מוצרים דיגיטליים מקצועיים\n_תשלום דרך PayPal_');
-    for (const [id, p] of Object.entries(PRODUCTS)) {
-      embed.addFields({ name: `${p.name} — $${p.price}`, value: `/buy ${id}`, inline: true });
+    const e = new EmbedBuilder().setTitle('🛒 חנות Yaniv Bot').setColor(0x667eea).setDescription('מוצרים דיגיטליים מקצועיים | תשלום PayPal');
+    const cats: Record<string,any[]> = {};
+    for (const [id,p] of Object.entries(PRODUCTS)) {
+      const cat = id.includes('discord')?'🎮 דיסקורד':id.includes('website')?'🌐 אתרים':id.includes('vps')?'🖥️ שרתים':id.includes('stars')?'⭐ כוכבים':'📦 אחר';
+      if(!cats[cat]) cats[cat]=[];
+      cats[cat].push(`**${p.name}** — $${p.price} | \`/buy ${id}\``);
     }
-    embed.setFooter({ text: 'Made with ❤️ by Yaniv' });
-    return interaction.editReply({ embeds: [embed] });
+    for (const [cat,items] of Object.entries(cats)) {
+      e.addFields({name:cat,value:items.join('\n'),inline:false});
+    }
+    e.setFooter({text:'Bot by Yaniv 🚀'});
+    return interaction.editReply({embeds:[e]});
   }
 
-  // ─── /buy ─────────────────────────────────────────────────────────────────
+  if (commandName === 'products') {
+    const list = Object.entries(PRODUCTS).map(([id,p]:any)=>`\`${id}\` — ${p.name} — **$${p.price}**`).join('\n');
+    return interaction.editReply({embeds:[embed('📦 מוצרים',list)]});
+  }
+
+  if (commandName === 'price') {
+    const id = interaction.options.getString('product');
+    const p = PRODUCTS[id];
+    if(!p) return interaction.editReply({embeds:[errEmbed('מוצר לא נמצא')]});
+    return interaction.editReply({embeds:[embed(`💰 ${p.name}`,`מחיר: **$${p.price}**\n${p.desc}\n\nלרכישה: \`/buy ${id}\``,0x00b09b)]});
+  }
+
   if (commandName === 'buy') {
-    const productId = interaction.options.getString('product');
-    const product = PRODUCTS[productId];
-    if (!product) return interaction.editReply({ content: '❌ מוצר לא נמצא. /shop לרשימה.' });
-    const embed = new EmbedBuilder()
-      .setTitle(`💳 רכישה: ${product.name}`)
-      .setColor(0x00b09b)
-      .addFields(
-        { name: '💰 מחיר', value: `$${product.price}`, inline: true },
-        { name: '📧 תשלום', value: 'PayPal', inline: true },
+    const id = interaction.options.getString('product');
+    const p = PRODUCTS[id];
+    if(!p) return interaction.editReply({embeds:[errEmbed('מוצר לא נמצא. /products לרשימה')]});
+    const e = embed(`💳 רכישה: ${p.name}`,`💰 מחיר: **$${p.price}**\n📦 ${p.desc}\n\n_צור קשר עם מנהל לקישור תשלום PayPal_`,0x00b09b);
+    return interaction.editReply({embeds:[e]});
+  }
+
+  // ══════════════════════════════════════════════════════
+  //  VERIFY
+  // ══════════════════════════════════════════════════════
+  if (commandName === 'setup-verify') {
+    if (!isAdmin(member)) return interaction.editReply({embeds:[errEmbed('נדרשות הרשאות Admin')]});
+    const role = interaction.options.getRole('role');
+    let verifyChannel = interaction.options.getChannel('channel');
+
+    if (!verifyChannel) {
+      verifyChannel = await guild?.channels?.create({
+        name: 'verify',
+        type: 0,
+        topic: '✅ לחץ על הכפתור כדי לאמת את עצמך ולקבל גישה לשרת',
+        permissionOverwrites: [
+          {id: guild?.roles?.everyone?.id, allow: ['ViewChannel','ReadMessageHistory'], deny: ['SendMessages']},
+        ],
+      });
+    }
+
+    const verifyEmbed = new EmbedBuilder()
+      .setTitle('✅ אימות חברים')
+      .setDescription(
+        '## ברוכים הבאים לשרת! 🎉\n\n' +
+        'כדי לקבל גישה מלאה לשרת ולכל הערוצים, עליך לאמת את עצמך.\n\n' +
+        '**לחץ על הכפתור למטה כדי להתאמת!**\n\n' +
+        '_האימות הוא חד-פעמי ולוקח שנייה אחת_'
       )
-      .setDescription('צור קשר עם המנהל לקישור תשלום.')
-      .setFooter({ text: 'By Yaniv' });
-    return interaction.editReply({ embeds: [embed] });
+      .setColor(0x57F287)
+      .setThumbnail(guild?.iconURL({size:512})||'')
+      .addFields(
+        {name:'📋 מה מקבלים?', value:'גישה לכל ערוצי השרת 🔓', inline:true},
+        {name:'⏱️ כמה זמן לוקח?', value:'שנייה אחת! ⚡', inline:true},
+      )
+      .setFooter({text:'Bot by Yaniv 🚀 | לחץ כדי לאמת'})
+      .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('verify_button')
+        .setLabel('✅ אמת אותי!')
+        .setStyle(ButtonStyle.Success)
+        .setEmoji('🛡️')
+    );
+
+    await verifyChannel?.send({embeds:[verifyEmbed], components:[row]});
+
+    verifyConfig[guild?.id] = {roleId: role.id, channelId: verifyChannel?.id};
+    if (!verifiedUsers[guild?.id]) verifiedUsers[guild?.id] = new Set();
+
+    return interaction.editReply({embeds:[embed(
+      '✅ מערכת אימות הוגדרה!',
+      `📢 ערוץ אימות: <#${verifyChannel?.id}>\n🎭 תפקיד: **${role.name}**\n\n` +
+      `**המלצות:**\n• הסתר את כל הערוצים מ-@everyone\n• תן גישה רק לתפקיד **${role.name}**\n• כך רק חברים מאומתים יראו את השרת`,
+      0x57F287
+    )]});
+  }
+
+  if (commandName === 'verify-stats') {
+    const cfg = verifyConfig[guild?.id];
+    const count = verifiedUsers[guild?.id]?.size||0;
+    if (!cfg) return interaction.editReply({embeds:[errEmbed('מערכת אימות לא הוגדרה. השתמש ב-/setup-verify')]});
+    const role = guild?.roles?.cache?.get(cfg.roleId);
+    return interaction.editReply({embeds:[embed(
+      '📊 סטטיסטיקות אימות',
+      `✅ חברים מאומתים: **${count}**\n🎭 תפקיד: **${role?.name||cfg.roleId}**\n📢 ערוץ: <#${cfg.channelId}>`,
+      0x57F287
+    )]});
+  }
+
+  if (commandName === 'unverify') {
+    if (!isAdmin(member)) return interaction.editReply({embeds:[errEmbed('נדרשות הרשאות Admin')]});
+    const u = interaction.options.getUser('user');
+    const cfg = verifyConfig[guild?.id];
+    if (!cfg) return interaction.editReply({embeds:[errEmbed('מערכת אימות לא הוגדרה')]});
+    const m = guild?.members?.cache?.get(u.id);
+    await m?.roles?.remove(cfg.roleId);
+    verifiedUsers[guild?.id]?.delete(u.id);
+    return interaction.editReply({embeds:[embed('🔒 אימות הוסר',`**${u.username}** הוסר מהמאומתים`,0xff6b35)]});
   }
 });
 
-// ─── Login ────────────────────────────────────────────────────────────────────
-client.login(TOKEN);
+// ─── Button interactions (Verify) ─────────────────────────────────────────────
+client.on('interactionCreate', async (interaction: any) => {
+  if (!interaction.isButton()) return;
+  if (interaction.customId === 'verify_button') {
+    const guildId = interaction.guild?.id;
+    const cfg = verifyConfig[guildId];
+    if (!cfg) return interaction.reply({content:'❌ מערכת האימות לא מוגדרת. פנה למנהל.',ephemeral:true});
 
-console.log('🎮 Discord Bot by Yaniv מתחבר...');
+    const member = interaction.member;
+    if (member?.roles?.cache?.has(cfg.roleId)) {
+      return interaction.reply({content:'✅ אתה כבר מאומת! יש לך גישה מלאה לשרת.',ephemeral:true});
+    }
+
+    try {
+      await member?.roles?.add(cfg.roleId);
+      if (!verifiedUsers[guildId]) verifiedUsers[guildId] = new Set();
+      verifiedUsers[guildId].add(interaction.user.id);
+
+      return interaction.reply({
+        embeds:[new EmbedBuilder()
+          .setTitle('✅ אומת בהצלחה!')
+          .setDescription(`ברוך הבא **${interaction.user.username}**! 🎉\nקיבלת גישה מלאה לשרת!`)
+          .setColor(0x57F287)
+          .setThumbnail(interaction.user.displayAvatarURL({size:256}))
+          .setFooter({text:'Bot by Yaniv 🚀'})
+          .setTimestamp()
+        ],
+        ephemeral:true
+      });
+    } catch(e:any) {
+      return interaction.reply({content:`❌ שגיאה: ${e.message}`,ephemeral:true});
+    }
+  }
+});
+
+// ─── New member join → send to verify channel ─────────────────────────────────
+client.on('guildMemberAdd', async (member: any) => {
+  const cfg = verifyConfig[member.guild?.id];
+  if (!cfg) return;
+  const verifyChannel = member.guild?.channels?.cache?.get(cfg.channelId);
+  if (!verifyChannel) return;
+  const e = new EmbedBuilder()
+    .setTitle('👋 חבר חדש הצטרף!')
+    .setDescription(`ברוך הבא **${member.user.username}**! 🎉\nכדי לקבל גישה לשרת — לחץ על כפתור האימות למעלה 👆`)
+    .setColor(0x5865f2)
+    .setThumbnail(member.user.displayAvatarURL({size:256}))
+    .setFooter({text:'Bot by Yaniv 🚀'})
+    .setTimestamp();
+  verifyChannel.send({content:`<@${member.id}>`, embeds:[e]}).catch(()=>{});
+});
+
+// ─── AFK detection ────────────────────────────────────────────────────────────
+client.on('messageCreate', async (message: any) => {
+  if (message.author.bot) return;
+  if (afkUsers[message.author.id]) {
+    delete afkUsers[message.author.id];
+    message.reply(`👋 ברוך שובך **${message.author.username}**! הוסר מצב AFK.`).catch(()=>{});
+  }
+  for (const mention of message.mentions?.users?.values()||[]) {
+    if (afkUsers[mention.id]) {
+      message.reply(`💤 **${mention.username}** כרגע AFK: ${afkUsers[mention.id]}`).catch(()=>{});
+    }
+  }
+});
+
+client.login(TOKEN);
+console.log('🎮 Discord Bot by Yaniv v3.0 מתחבר...');
 
 export default client;
