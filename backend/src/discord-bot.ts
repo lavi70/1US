@@ -1550,27 +1550,8 @@ if (commandName === 'uptime') {
         }
       }
 
-      // ── Chart: TradingView dark via chart-img.com ─────
-      const exchange = p.exchange==='NASDAQ'?'NASDAQ':p.exchange==='NYSE'?'NYSE':p.exchange==='AMEX'?'AMEX':'NASDAQ';
-      const tvSymbol = `${exchange}:${symbol}`;
-
-      // Build chart-img.com URL — real TradingView dark chart, no API key needed (20/hr free)
-      const chartParams = new URLSearchParams({
-        symbol: tvSymbol,
-        interval: '1D',
-        theme: 'dark',
-        width: '800',
-        height: '450',
-        timezone: 'America/New_York',
-        'studies[0]': 'MASimple@tv-basicstudies',
-        'studies[1]': 'MASimple@tv-basicstudies',
-        'studies[2]': 'Volume@tv-basicstudies',
-        t: String(Date.now())
-      });
-      let chartUrl = `https://api.chart-img.com/v1/tradingview/advanced-chart?${chartParams.toString()}`;
-
-      // Fallback QuickChart (only used if chart-img fails at runtime — built separately below)
-      let fallbackChartUrl = '';
+      // ── Chart: QuickChart candlestick dark theme ───────
+      let chartUrl = '';
       if (closes.length >= 10) {
         const N = Math.min(50, closes.length);
         const sO = opens.slice(-N), sH = highs.slice(-N), sL = lows.slice(-N);
@@ -1586,22 +1567,32 @@ if (commandName === 'uptime') {
         const volBars=sV.map((v,i)=>({x:labels[i],y:+(priceMin+(v/maxV)*volH).toFixed(2)}));
         const resLine=resistance?labels.map(x=>({x,y:+resistance.toFixed(2)})):[];
         const supLine=support?labels.map(x=>({x,y:+support.toFixed(2)})):[];
-        const cfg={type:'candlestick',data:{labels,datasets:[
-          {label:symbol,data:candleData,color:{up:'#26a69a',down:'#ef5350',unchanged:'#888'}},
-          {type:'line',label:'MA20',data:ma20,borderColor:'#f39c12',borderWidth:1.5,pointRadius:0,fill:false},
-          {type:'line',label:'MA50',data:ma50,borderColor:'#9b59b6',borderWidth:1.5,pointRadius:0,fill:false},
-          ...(resistance?[{type:'line',label:`R $${resistance.toFixed(0)}`,data:resLine,borderColor:'#ef5350',borderDash:[5,3],borderWidth:1.5,pointRadius:0,fill:false}]:[]),
-          ...(support?[{type:'line',label:`S $${support.toFixed(0)}`,data:supLine,borderColor:'#26a69a',borderDash:[5,3],borderWidth:1.5,pointRadius:0,fill:false}]:[]),
-          {type:'bar',label:'Vol',data:volBars,backgroundColor:sC.map((c,i)=>c>=(sO[i]||c)?'rgba(38,166,154,0.4)':'rgba(239,83,80,0.4)'),borderWidth:0}
-        ]},options:{legend:{display:true,labels:{fontColor:'#b2b5be',fontSize:10,boxWidth:10}},scales:{xAxes:[{ticks:{fontColor:'#787b86',maxTicksLimit:10,fontSize:10},gridLines:{color:'rgba(255,255,255,0.04)'}}],yAxes:[{position:'right',ticks:{fontColor:'#787b86',fontSize:10},gridLines:{color:'rgba(255,255,255,0.06)'}}]},title:{display:true,text:`${symbol} · Daily · MA20 · MA50 · R/S`,fontColor:'#d1d4dc',fontSize:12,padding:6}},backgroundColor:'#131722'};
-        fallbackChartUrl = `https://quickchart.io/chart?w=820&h=400&v=${Date.now()}&c=${encodeURIComponent(JSON.stringify(cfg))}`;
+        const cfg={
+          type:'candlestick',
+          data:{
+            labels,
+            datasets:[
+              {label:symbol, data:candleData, color:{up:'#26a69a',down:'#ef5350',unchanged:'#888'}},
+              {type:'line',label:'MA20',data:ma20,borderColor:'#f6c90e',borderWidth:1.5,pointRadius:0,fill:false},
+              {type:'line',label:'MA50',data:ma50,borderColor:'#c678dd',borderWidth:1.5,pointRadius:0,fill:false},
+              ...(resistance?[{type:'line',label:`התנגדות $${resistance.toFixed(0)}`,data:resLine,borderColor:'rgba(239,83,80,0.9)',borderDash:[6,3],borderWidth:2,pointRadius:0,fill:false}]:[]),
+              ...(support?[{type:'line',label:`תמיכה $${support.toFixed(0)}`,data:supLine,borderColor:'rgba(38,166,154,0.9)',borderDash:[6,3],borderWidth:2,pointRadius:0,fill:false}]:[]),
+              {type:'bar',label:'נפח',data:volBars,backgroundColor:sC.map((c,i)=>c>=(sO[i]||c)?'rgba(38,166,154,0.45)':'rgba(239,83,80,0.45)'),borderWidth:0}
+            ]
+          },
+          options:{
+            legend:{display:true,labels:{fontColor:'#c0c0c0',fontSize:11,boxWidth:12,padding:10}},
+            scales:{
+              xAxes:[{ticks:{fontColor:'#666',maxTicksLimit:10,fontSize:10},gridLines:{color:'rgba(255,255,255,0.04)'}}],
+              yAxes:[{position:'right',ticks:{fontColor:'#888',fontSize:10},gridLines:{color:'rgba(255,255,255,0.06)'}}]
+            },
+            title:{display:true,text:`${symbol}  ·  יומי  ·  MA20  MA50  ·  תמיכה/התנגדות`,fontColor:'#d0d0d0',fontSize:13,padding:10},
+            layout:{padding:{top:5,bottom:5,left:5,right:10}}
+          },
+          backgroundColor:'#131722'
+        };
+        chartUrl = `https://quickchart.io/chart?w=820&h=420&v=${Date.now()}&c=${encodeURIComponent(JSON.stringify(cfg))}`;
       }
-
-      // Try chart-img, fall back to QuickChart if it fails
-      try {
-        const test = await axios.head(chartUrl, {timeout:4000});
-        if (test.status !== 200) chartUrl = fallbackChartUrl || chartUrl;
-      } catch { chartUrl = fallbackChartUrl || chartUrl; }
 
       // ── Analyst ────────────────────────────────────────
       const rec = recs[0]||{};
