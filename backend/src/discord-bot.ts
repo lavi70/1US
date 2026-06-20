@@ -902,39 +902,33 @@ if (commandName === 'uptime') {
   if (commandName === 'stock') {
     const symbol = interaction.options.getString('symbol').toUpperCase();
     try {
-      // Use Yahoo Finance v7 quote endpoint
-      const res = await axios.get(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}&lang=en&region=US`, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': 'application/json',
-          'Accept-Language': 'en-US,en;q=0.9',
-        }
+      // Use stooq.com - free, no API key needed
+      const res = await axios.get(`https://stooq.com/q/l/?s=${symbol.toLowerCase()}.us&f=sd2t2ohlcv&h&e=json`, {
+        timeout: 10000
       });
-      const quote = res.data?.quoteResponse?.result?.[0];
-      if (!quote) return interaction.editReply({embeds:[errEmbed(`לא נמצאה מניה: ${symbol}`)]});
+      const row = res.data?.symbols?.[0];
+      if (!row || !row.close) return interaction.editReply({embeds:[errEmbed(`לא נמצאה מניה: ${symbol} (נסה: AAPL, TSLA, MSFT, GOOGL)`)]});
 
-      const price = quote.regularMarketPrice;
-      const change = quote.regularMarketChange;
-      const changePct = quote.regularMarketChangePercent?.toFixed(2);
+      const price = parseFloat(row.close);
+      const open = parseFloat(row.open);
+      const change = price - open;
+      const changePct = ((change / open) * 100).toFixed(2);
       const isUp = change >= 0;
       const color = isUp ? 0x2ecc71 : 0xe74c3c;
       const arrow = isUp ? '📈' : '📉';
 
       return interaction.editReply({embeds:[new EmbedBuilder()
-        .setTitle(`${arrow} ${symbol} — ${quote.longName || quote.shortName || symbol}`)
+        .setTitle(`${arrow} ${symbol}`)
         .setColor(color)
         .addFields(
           {name:'💵 מחיר', value:`**$${price?.toFixed(2)}**`, inline:true},
-          {name:'📊 שינוי', value:`${isUp?'+':''}${change?.toFixed(2)} (${isUp?'+':''}${changePct}%)`, inline:true},
-          {name:'📅 סגירה אתמול', value:`$${quote.regularMarketPreviousClose?.toFixed(2)||'N/A'}`, inline:true},
-          {name:'📉 שפל יומי', value:`$${quote.regularMarketDayLow?.toFixed(2)||'N/A'}`, inline:true},
-          {name:'📈 שיא יומי', value:`$${quote.regularMarketDayHigh?.toFixed(2)||'N/A'}`, inline:true},
-          {name:'💹 נפח מסחר', value:quote.regularMarketVolume?.toLocaleString()||'N/A', inline:true},
-          {name:'🏦 שווי שוק', value:quote.marketCap ? `$${(quote.marketCap/1e9).toFixed(1)}B` : 'N/A', inline:true},
-          {name:'📊 P/E Ratio', value:quote.trailingPE?.toFixed(2)||'N/A', inline:true},
-          {name:'🎯 52W טווח', value:`$${quote.fiftyTwoWeekLow?.toFixed(2)||'N/A'} - $${quote.fiftyTwoWeekHigh?.toFixed(2)||'N/A'}`, inline:true},
+          {name:'📊 שינוי מהפתיחה', value:`${isUp?'+':''}${change?.toFixed(2)} (${isUp?'+':''}${changePct}%)`, inline:true},
+          {name:'🔓 פתיחה', value:`$${open?.toFixed(2)}`, inline:true},
+          {name:'📉 שפל יומי', value:`$${parseFloat(row.low)?.toFixed(2)||'N/A'}`, inline:true},
+          {name:'📈 שיא יומי', value:`$${parseFloat(row.high)?.toFixed(2)||'N/A'}`, inline:true},
+          {name:'💹 נפח מסחר', value:parseInt(row.volume)?.toLocaleString()||'N/A', inline:true},
         )
-        .setFooter({text:'מקור: Yahoo Finance | עדכון בזמן אמת'})
+        .setFooter({text:`מקור: Stooq | תאריך: ${row.date||'היום'}`})
         .setTimestamp()
       ]});
     } catch(e:any) {
