@@ -17,6 +17,8 @@ const execAsync = promisify(exec);
 const TOKEN = process.env.DISCORD_BOT_TOKEN || '';
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '';
 
+// Live stock tickers: messageId → { symbol, channelId, intervalId }
+const liveTickers: Map<string, { symbol: string; channelId: string; intervalId: any }> = new Map();
 
 if (!TOKEN || !CLIENT_ID) { console.error('❌ DISCORD_BOT_TOKEN or DISCORD_CLIENT_ID is not set'); process.exit(1); }
 
@@ -210,7 +212,6 @@ const commands = [
   new SlashCommandBuilder().setName('shop').setDescription('חנות מוצרים'),
   new SlashCommandBuilder().setName('buy').setDescription('רכישת מוצר').addStringOption(o=>o.setName('product').setDescription('מזהה').setRequired(true)),
   new SlashCommandBuilder().setName('products').setDescription('רשימת מוצרים'),
-  new SlashCommandBuilder().setName('price').setDescription('מחיר מוצר').addStringOption(o=>o.setName('product').setDescription('מזהה').setRequired(true)),
 
   // VERIFY
   new SlashCommandBuilder().setName('setup-verify').setDescription('הגדרת מערכת אימות לשרת (Admin)').addRoleOption(o=>o.setName('role').setDescription('תפקיד Verified').setRequired(true)).addChannelOption(o=>o.setName('channel').setDescription('ערוץ אימות (ברירת מחדל: נוצר אוטומטית)').setRequired(false)),
@@ -221,10 +222,11 @@ const commands = [
   // SERVER SETUP
   new SlashCommandBuilder().setName('setup-server').setDescription('🏗️ בנה שרת מקצועי מלא עם ערוצים, תפקידים וטיקטים (Admin)').addStringOption(o=>o.setName('name').setDescription('שם השרת (אופציונלי)').setRequired(false)),
   new SlashCommandBuilder().setName('setup-stocks').setDescription('📈 בנה שרת מניות מקצועי עם ערוצים ותפקידים (Admin)'),
+  new SlashCommandBuilder().setName('stock-live').setDescription('📡 Live ticker - עדכון אוטומטי כל 60 שניות').addStringOption(o=>o.setName('symbol').setDescription('סימול (AAPL, TSLA...)').setRequired(true)),
+  new SlashCommandBuilder().setName('stock-stop').setDescription('⏹️ עצור live ticker בערוץ זה'),
   new SlashCommandBuilder().setName('setup-tickets').setDescription('🎫 הגדרת מערכת טיקטים (Admin)').addChannelOption(o=>o.setName('channel').setDescription('ערוץ פתיחת טיקטים').setRequired(false)),
   new SlashCommandBuilder().setName('close-ticket').setDescription('🔒 סגירת טיקט נוכחי'),
   new SlashCommandBuilder().setName('add-ticket').setDescription('הוסף משתמש לטיקט').addUserOption(o=>o.setName('user').setDescription('משתמש').setRequired(true)),
-  new SlashCommandBuilder().setName('ticket-rename').setDescription('שנה שם טיקט').addStringOption(o=>o.setName('name').setDescription('שם חדש').setRequired(true)),
 ].map(c=>c.toJSON());
 
 // ─── Register ─────────────────────────────────────────────────────────────────
@@ -1272,6 +1274,118 @@ if (commandName === 'uptime') {
   // ══════════════════════════════════════════════════════
   //  SETUP STOCKS SERVER
   // ══════════════════════════════════════════════════════
+  if (commandName === 'stock-live') {
+    const symbol = interaction.options.getString('symbol').toUpperCase();
+    const finnhubKey = process.env.FINNHUB_KEY || '';
+    if (!finnhubKey) return interaction.editReply({embeds:[errEmbed('חסר FINNHUB_KEY')]});
+
+    // Stop any existing ticker in this channel
+    for (const [msgId, ticker] of liveTickers.entries()) {
+      if (ticker.channelId === interaction.channelId) {
+        clearInterval(ticker.intervalId);
+        liveTickers.delete(msgId);
+      }
+    }
+
+    const getStockData = async () => {
+      const finnhubKey = process.env.FINNHUB_KEY || '';
+      const today = new Date().toISOString().split('T')[0];
+      const yesterday = new Date(Date.now()-86400000).toISOString().split('T')[0];
+      const [qR, pR, nR, sR, rR] = await Promise.allSettled([
+        axios.get(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubKey}`),
+        axios.get(`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${finnhubKey}`),
+        axios.get(`https://finnhub.io/api/v1/company-news?symbol=${symbol}&from=${yesterday}&to=${today}&token=${finnhubKey}`),
+        axios.get(`https://finnhub.io/api/v1/news-sentiment?symbol=${symbol}&token=${finnhubKey}`),
+        axios.get(`https://finnhub.io/api/v1/stock/recommendation?symbol=${symbol}&token=${finnhubKey}`),
+      ]);
+      const q = qR.status==='fulfilled'?qR.value.data:null;
+      const p = pR.status==='fulfilled'?pR.value.data:{};
+      const news = nR.status==='fulfilled'?nR.value.data?.slice(0,2):[];
+      const sent = sR.status==='fulfilled'?sR.value.data:null;
+      const rec = rR.status==='fulfilled'?rR.value.data?.[0]:null;
+      return {q,p,news,sent,rec};
+    };
+
+    const buildLiveEmbed = async () => {
+      const {q,p,news,sent,rec} = await getStockData();
+      if (!q?.c) return null;
+
+      const price=q.c, change=q.d||0, pct=Math.abs(q.dp||0);
+      const isUp=change>=0;
+      let color = isUp?(pct>5?0x00ff00:pct>2?0x2ecc71:0x27ae60):(pct>5?0xff0000:pct>2?0xe74c3c:0xc0392b);
+      const signal = pct>5?(isUp?'🚀 זינוק!':'💥 קריסה!'):pct>2?(isUp?'📈 עולה':'📉 יורד'):pct>0.3?(isUp?'↗️':'↘️'):'😐';
+      const rangePos=Math.min(100,Math.max(0,((price-q.l)/(q.h-q.l||1))*100));
+      const bar='█'.repeat(Math.round(rangePos/10))+'░'.repeat(10-Math.round(rangePos/10));
+
+      let sentText='N/A';
+      if(sent?.sentiment){const bull=(sent.sentiment.bullishPercent*100).toFixed(0);const bear=(sent.sentiment.bearishPercent*100).toFixed(0);sentText=`🐂${bull}% | 🐻${bear}%`;}
+
+      let recText='N/A';
+      if(rec){const tot=rec.buy+rec.hold+rec.sell+rec.strongBuy+rec.strongSell||1;const s=((rec.strongBuy*2+rec.buy-rec.sell-rec.strongSell*2)/tot).toFixed(1);recText=`💚${rec.strongBuy+rec.buy} 🟡${rec.hold} ❤️${rec.sell+rec.strongSell} → ${Number(s)>0.5?'קנה':Number(s)<-0.5?'מכור':'החזק'}`;}
+
+      // Translate top news
+      let newsText = 'N/A';
+      if(news?.length){
+        const translated = await Promise.all(news.map(async(n:any)=>{
+          try{const r=await axios.get(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=he&dt=t&q=${encodeURIComponent((n.headline||'').slice(0,150))}`,{timeout:4000});return `• ${r.data?.[0]?.map((x:any)=>x[0]).join('')||n.headline}`;}catch{return `• ${n.headline?.slice(0,80)||''}`;}
+        }));
+        newsText = translated.join('\n');
+      }
+
+      const now = new Date().toLocaleTimeString('he-IL');
+      return new EmbedBuilder()
+        .setTitle(`${isUp?'🟢':'🔴'} **${symbol}** ${signal} | 📡 LIVE`)
+        .setColor(color)
+        .setDescription(`**${p?.name||symbol}** | ${p?.exchange||''} | ${p?.finnhubIndustry||''}`)
+        .setThumbnail(p?.logo||null)
+        .addFields(
+          {name:'💵 מחיר', value:`## $${price.toFixed(2)}`, inline:true},
+          {name:`${isUp?'📈':'📉'} שינוי`, value:`**${isUp?'+':''}${change.toFixed(2)}** (${isUp?'+':''}${pct.toFixed(2)}%)`, inline:true},
+          {name:'📅 אתמול', value:`$${q.pc?.toFixed(2)}`, inline:true},
+          {name:'📊 טווח יומי', value:`\`[${bar}]\` ${rangePos.toFixed(0)}%\n📉$${q.l?.toFixed(2)} ←——→ 📈$${q.h?.toFixed(2)}`, inline:false},
+          {name:'👨‍💼 אנליסטים', value:recText, inline:true},
+          {name:'🧠 סנטימנט', value:sentText, inline:true},
+          {name:'📰 חדשות (עברית)', value:newsText.slice(0,400)||'N/A', inline:false},
+        )
+        .setFooter({text:`🔄 עדכון אוטומטי כל 60 שניות | עכשיו: ${now}`})
+        .setTimestamp();
+    };
+
+    try {
+      const firstEmbed = await buildLiveEmbed();
+      if (!firstEmbed) return interaction.editReply({embeds:[errEmbed(`לא נמצאה מניה: ${symbol}`)]});
+
+      const stopBtn = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`stock_stop_live`).setLabel('⏹️ עצור').setStyle(ButtonStyle.Danger),
+      );
+      const msg = await interaction.editReply({embeds:[firstEmbed], components:[stopBtn]}) as any;
+
+      // Auto-update every 60 seconds
+      const intervalId = setInterval(async () => {
+        try {
+          const e = await buildLiveEmbed();
+          if (e) await msg.edit({embeds:[e], components:[stopBtn]});
+        } catch {}
+      }, 60000);
+
+      liveTickers.set(msg.id, {symbol, channelId: interaction.channelId, intervalId});
+    } catch(e:any) {
+      return interaction.editReply({embeds:[errEmbed(`שגיאה: ${e.message}`)]});
+    }
+  }
+
+  if (commandName === 'stock-stop') {
+    let stopped = false;
+    for (const [msgId, ticker] of liveTickers.entries()) {
+      if (ticker.channelId === interaction.channelId) {
+        clearInterval(ticker.intervalId);
+        liveTickers.delete(msgId);
+        stopped = true;
+      }
+    }
+    return interaction.editReply({embeds:[embed(stopped?'⏹️ Live ticker עצר':'❌ אין ticker פעיל', stopped?`עצרתי את ה-ticker של **${[...liveTickers.values()][0]?.symbol||''}** בערוץ זה`:'לא נמצא ticker פעיל בערוץ זה', stopped?0xff6b35:0xe74c3c)]});
+  }
+
   if (commandName === 'setup-stocks') {
     if (!isAdmin(member)) return interaction.editReply({embeds:[errEmbed('נדרשות הרשאות Admin')]});
     await interaction.editReply({embeds:[embed('📈 בונה שרת מניות...','אנא המתן...',0x2ecc71)]});
