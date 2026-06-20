@@ -17,6 +17,7 @@ import ProfitCalc from './pages/ProfitCalc';
 import SEOAudit from './pages/SEOAudit';
 import Inventory from './pages/Inventory';
 import OAuthCallback from './pages/OAuthCallback';
+import Finance from './pages/Finance';
 
 function MoreMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (!open) return null;
@@ -29,6 +30,7 @@ function MoreMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
     { to: '/profit',      icon: DollarSign,    label: 'מחשבון רווח' },
     { to: '/seo-audit',   icon: ShieldCheck,   label: 'SEO Audit' },
     { to: '/inventory',   icon: BarChart2,     label: 'מלאי' },
+    { to: '/finance',      icon: DollarSign,    label: 'כסף' },
     { to: '/settings',    icon: Store,         label: 'הגדרות' },
   ];
   return (
@@ -59,7 +61,7 @@ function NavBar() {
     { to: '/orders',   icon: ShoppingBag,     label: 'הזמנות' },
   ];
 
-  const moreRoutes = ['/analytics', '/bulk', '/templates', '/settings', '/ai', '/quick-edit', '/profit', '/seo-audit', '/inventory'];
+  const moreRoutes = ['/analytics', '/bulk', '/templates', '/settings', '/ai', '/quick-edit', '/profit', '/seo-audit', '/inventory', '/finance'];
   const moreActive = moreRoutes.some(r => location.pathname.startsWith(r));
 
   return (
@@ -107,6 +109,7 @@ export default function App() {
           <Route path="/profit"            element={<ProfitCalc />} />
           <Route path="/seo-audit"         element={<SEOAudit />} />
           <Route path="/inventory"         element={<Inventory />} />
+          <Route path="/finance"            element={<Finance />} />
           <Route path="/settings"          element={<SettingsPage />} />
         </Routes>
         <NavBar />
