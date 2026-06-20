@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // @ts-nocheck
-import TelegramBot from 'node-telegram-bot-api';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const TelegramBot = require('node-telegram-bot-api');
 import { exec, execSync } from 'child_process';
 import { promisify } from 'util';
 import * as os from 'os';
