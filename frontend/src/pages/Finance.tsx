@@ -6,7 +6,8 @@ import {
   ArrowRightLeft, Search, Download, PieChart as PieIcon, BarChart2,
   Target, RefreshCw, Bell, AlertTriangle, Calendar,
   Repeat, Trophy, PiggyBank, Zap,
-  Lock, Unlock, ShieldCheck, LayoutDashboard, Delete
+  Lock, Unlock, ShieldCheck, LayoutDashboard, Delete,
+  Settings, Upload, FileJson, BarChart as BarChartIcon, Activity, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import {
   PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Legend
@@ -1314,6 +1315,339 @@ function CurrencyConverter() {
   );
 }
 
+/* ─────────────── Statistics ─────────────── */
+
+const MONTH_NAMES = ['ינו','פב','מרץ','אפר','מאי','יוני','יולי','אוג','ספט','אוק','נוב','דצמ'];
+
+function StatisticsPanel({ txs }: { txs: Transaction[] }) {
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+
+  const yearTxs = txs.filter(t => t.type !== 'transfer' && t.date.startsWith(String(year)));
+
+  // Monthly data for bar chart
+  const monthlyData = useMemo(() => {
+    return Array.from({ length: 12 }, (_, i) => {
+      const m = String(i + 1).padStart(2, '0');
+      const prefix = `${year}-${m}`;
+      const mTxs = yearTxs.filter(t => t.date.startsWith(prefix));
+      return {
+        month: MONTH_NAMES[i],
+        הכנסות: Math.round(mTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)),
+        הוצאות: Math.round(mTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)),
+      };
+    });
+  }, [yearTxs, year]);
+
+  // Top expense categories
+  const topExpCats = useMemo(() => {
+    const map: Record<string, number> = {};
+    yearTxs.filter(t => t.type === 'expense').forEach(t => { map[t.category] = (map[t.category] ?? 0) + t.amount; });
+    return Object.entries(map).sort(([, a], [, b]) => b - a).slice(0, 6)
+      .map(([name, value]) => ({ name, value: Math.round(value) }));
+  }, [yearTxs]);
+
+  // Top income categories
+  const topIncCats = useMemo(() => {
+    const map: Record<string, number> = {};
+    yearTxs.filter(t => t.type === 'income').forEach(t => { map[t.category] = (map[t.category] ?? 0) + t.amount; });
+    return Object.entries(map).sort(([, a], [, b]) => b - a).slice(0, 4)
+      .map(([name, value]) => ({ name, value: Math.round(value) }));
+  }, [yearTxs]);
+
+  const totalIn = yearTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const totalOut = yearTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const savings = totalIn - totalOut;
+  const savingRate = totalIn > 0 ? Math.round((savings / totalIn) * 100) : 0;
+
+  // Best and worst months
+  const withNet = monthlyData.map(m => ({ ...m, net: m['הכנסות'] - m['הוצאות'] }));
+  const bestMonth = withNet.reduce((b, m) => m.net > b.net ? m : b, withNet[0]);
+  const worstMonth = withNet.reduce((b, m) => m.net < b.net ? m : b, withNet[0]);
+
+  return (
+    <div>
+      {/* Year picker */}
+      <div className="flex items-center justify-between mb-4">
+        <button onClick={() => setYear(y => y - 1)} className="p-1.5 rounded-lg border border-etsy-border bg-white">
+          <ChevronRight size={16} className="text-etsy-gray" />
+        </button>
+        <div className="flex items-center gap-1.5">
+          <Activity size={15} className="text-etsy-orange" />
+          <span className="font-bold">{year}</span>
+        </div>
+        <button onClick={() => setYear(y => y + 1)} disabled={year >= now.getFullYear()}
+          className="p-1.5 rounded-lg border border-etsy-border bg-white disabled:opacity-30">
+          <ChevronLeft size={16} className="text-etsy-gray" />
+        </button>
+      </div>
+
+      {yearTxs.length === 0 ? (
+        <div className="text-center py-12">
+          <BarChartIcon size={40} className="mx-auto text-etsy-border mb-3" />
+          <p className="text-etsy-gray text-sm">אין נתונים לשנת {year}</p>
+        </div>
+      ) : (
+        <>
+          {/* KPI row */}
+          <div className="grid grid-cols-3 gap-2 mb-4">
+            <div className="card p-3 text-center">
+              <p className="text-xs text-etsy-gray mb-1">הכנסות</p>
+              <p className="font-bold text-green-600 text-sm">{totalIn.toLocaleString()}</p>
+            </div>
+            <div className="card p-3 text-center">
+              <p className="text-xs text-etsy-gray mb-1">הוצאות</p>
+              <p className="font-bold text-red-500 text-sm">{totalOut.toLocaleString()}</p>
+            </div>
+            <div className="card p-3 text-center">
+              <p className="text-xs text-etsy-gray mb-1">חיסכון</p>
+              <p className={`font-bold text-sm ${savings >= 0 ? 'text-etsy-orange' : 'text-red-500'}`}>{savings.toLocaleString()}</p>
+            </div>
+          </div>
+
+          {/* Savings rate */}
+          <div className="card p-3 mb-4">
+            <div className="flex justify-between text-xs mb-1.5">
+              <span className="text-etsy-gray font-medium">שיעור חיסכון שנתי</span>
+              <span className={`font-bold ${savingRate >= 20 ? 'text-green-600' : savingRate >= 0 ? 'text-amber-500' : 'text-red-500'}`}>{savingRate}%</span>
+            </div>
+            <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+              <div className={`h-full rounded-full ${savingRate >= 20 ? 'bg-green-500' : savingRate >= 0 ? 'bg-amber-400' : 'bg-red-500'}`}
+                style={{ width: `${Math.min(Math.abs(savingRate), 100)}%` }} />
+            </div>
+            <p className="text-xs text-etsy-gray mt-1">
+              {savingRate >= 20 ? '✓ חיסכון מצוין' : savingRate >= 10 ? 'חיסכון סביר' : savingRate >= 0 ? 'חיסכון נמוך' : '⚠ הוצאות עולות על הכנסות'}
+            </p>
+          </div>
+
+          {/* Monthly bar chart */}
+          <div className="card p-3 mb-4">
+            <p className="text-xs text-etsy-gray font-medium mb-3">הכנסות מול הוצאות — חודשי</p>
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={monthlyData} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
+                <XAxis dataKey="month" tick={{ fontSize: 9 }} />
+                <YAxis tick={{ fontSize: 9 }} />
+                <Tooltip formatter={(v: number) => v.toLocaleString()} />
+                <Bar dataKey="הכנסות" fill="#22c55e" radius={[2,2,0,0]} />
+                <Bar dataKey="הוצאות" fill="#ef4444" radius={[2,2,0,0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Best / worst month */}
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            <div className="card p-3">
+              <p className="text-xs text-etsy-gray mb-1 flex items-center gap-1"><Trophy size={11} className="text-yellow-500" /> חודש הכי טוב</p>
+              <p className="font-bold text-sm">{bestMonth.month}</p>
+              <p className="text-xs text-green-600">+{bestMonth.net.toLocaleString()}</p>
+            </div>
+            <div className="card p-3">
+              <p className="text-xs text-etsy-gray mb-1 flex items-center gap-1"><AlertTriangle size={11} className="text-red-400" /> חודש הכי חלש</p>
+              <p className="font-bold text-sm">{worstMonth.month}</p>
+              <p className={`text-xs ${worstMonth.net < 0 ? 'text-red-500' : 'text-etsy-gray'}`}>{worstMonth.net.toLocaleString()}</p>
+            </div>
+          </div>
+
+          {/* Top expense categories */}
+          {topExpCats.length > 0 && (
+            <div className="card p-3 mb-4">
+              <p className="text-xs text-etsy-gray font-medium mb-3 flex items-center gap-1"><ArrowUpCircle size={12} className="text-red-400" /> הוצאות לפי קטגוריה</p>
+              <ResponsiveContainer width="100%" height={160}>
+                <PieChart>
+                  <Pie data={topExpCats} dataKey="value" nameKey="name" cx="40%" cy="50%" outerRadius={60}>
+                    {topExpCats.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip formatter={(v: number) => v.toLocaleString()} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="space-y-1 mt-1">
+                {topExpCats.map((c, i) => (
+                  <div key={c.name} className="flex justify-between text-xs">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
+                      {c.name}
+                    </span>
+                    <span className="font-medium">{c.value.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Top income categories */}
+          {topIncCats.length > 0 && (
+            <div className="card p-3 mb-4">
+              <p className="text-xs text-etsy-gray font-medium mb-2 flex items-center gap-1"><ArrowDownCircle size={12} className="text-green-500" /> מקורות הכנסה</p>
+              {topIncCats.map((c, i) => {
+                const pct = Math.round((c.value / totalIn) * 100);
+                return (
+                  <div key={c.name} className="mb-2">
+                    <div className="flex justify-between text-xs mb-0.5">
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
+                        {c.name}
+                      </span>
+                      <span className="font-medium">{c.value.toLocaleString()} ({pct}%)</span>
+                    </div>
+                    <div className="h-1.5 bg-gray-100 rounded-full">
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: PIE_COLORS[i % PIE_COLORS.length] }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ─────────────── Settings panel ─────────────── */
+
+interface FinanceData {
+  accounts: Account[];
+  txs: Transaction[];
+  budgets: Budget[];
+  recurring: Recurring[];
+  goals: Goal[];
+  version: number;
+}
+
+function SettingsPanel({
+  data, onImport, onClearAll, onSetPin, onRemovePin, onLock,
+}: {
+  data: FinanceData;
+  onImport: (d: FinanceData) => void;
+  onClearAll: () => void;
+  onSetPin: () => void;
+  onRemovePin: () => void;
+  onLock: () => void;
+}) {
+  const toast = useToast();
+  const hasPin = !!localStorage.getItem(PIN_KEY);
+
+  const exportAll = () => {
+    const json = JSON.stringify({ ...data, version: 1, exportedAt: new Date().toISOString() }, null, 2);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+    a.download = `finance-backup-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    toast.success('גיבוי הורד ✓');
+  };
+
+  const importFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result as string) as FinanceData;
+        if (!Array.isArray(parsed.accounts)) throw new Error();
+        if (!confirm(`לייבא ${parsed.accounts.length} חשבונות ו-${parsed.txs?.length ?? 0} תנועות? הנתונים הקיימים יוחלפו.`)) return;
+        onImport(parsed);
+        toast.success('הנתונים יובאו בהצלחה ✓');
+      } catch {
+        toast.error('קובץ לא תקין');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const stats = {
+    accounts: data.accounts.length,
+    txs: data.txs.length,
+    budgets: data.budgets.length,
+    recurring: data.recurring.length,
+    goals: data.goals.length,
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Summary */}
+      <div className="card p-4">
+        <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5">
+          <FileJson size={15} className="text-etsy-orange" /> סטטוס נתונים
+        </h3>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          {[
+            { label: 'חשבונות', val: stats.accounts },
+            { label: 'תנועות', val: stats.txs },
+            { label: 'יעדים', val: stats.goals },
+          ].map(s => (
+            <div key={s.label} className="bg-gray-50 rounded-lg p-2">
+              <p className="font-bold text-lg">{s.val}</p>
+              <p className="text-xs text-etsy-gray">{s.label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Backup / Restore */}
+      <div className="card p-4">
+        <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5">
+          <Download size={15} className="text-etsy-orange" /> גיבוי ושחזור
+        </h3>
+        <button onClick={exportAll}
+          className="w-full flex items-center gap-2 justify-center py-2.5 rounded-xl border border-etsy-border bg-white text-sm font-medium mb-2 active:bg-gray-50">
+          <Download size={15} /> ייצוא גיבוי (JSON)
+        </button>
+        <label className="w-full flex items-center gap-2 justify-center py-2.5 rounded-xl border border-etsy-border bg-white text-sm font-medium cursor-pointer active:bg-gray-50">
+          <Upload size={15} /> ייבוא גיבוי
+          <input type="file" accept=".json" className="hidden" onChange={importFile} />
+        </label>
+        <p className="text-xs text-etsy-gray mt-2 text-center">הגיבוי כולל חשבונות, תנועות, תקציבים, יעדים ותשלומים קבועים</p>
+      </div>
+
+      {/* PIN management */}
+      <div className="card p-4">
+        <h3 className="font-semibold text-sm mb-3 flex items-center gap-1.5">
+          <Lock size={15} className="text-etsy-orange" /> נעילת PIN
+        </h3>
+        <div className="space-y-2">
+          {hasPin ? (
+            <>
+              <button onClick={onLock}
+                className="w-full flex items-center gap-2 justify-center py-2.5 rounded-xl bg-etsy-orange text-white text-sm font-medium">
+                <Lock size={15} /> נעל עכשיו
+              </button>
+              <button onClick={onSetPin}
+                className="w-full flex items-center gap-2 justify-center py-2.5 rounded-xl border border-etsy-border text-sm font-medium">
+                <ShieldCheck size={15} /> שנה PIN
+              </button>
+              <button onClick={onRemovePin}
+                className="w-full flex items-center gap-2 justify-center py-2.5 rounded-xl border border-red-200 text-red-500 text-sm font-medium">
+                <Unlock size={15} /> הסר PIN
+              </button>
+            </>
+          ) : (
+            <button onClick={onSetPin}
+              className="w-full flex items-center gap-2 justify-center py-2.5 rounded-xl bg-etsy-orange text-white text-sm font-medium">
+              <Lock size={15} /> הגדר PIN
+            </button>
+          )}
+          <p className="text-xs text-etsy-gray text-center">ה-PIN נשמר רק על המכשיר הזה</p>
+        </div>
+      </div>
+
+      {/* Danger zone */}
+      <div className="card p-4 border-red-100">
+        <h3 className="font-semibold text-sm mb-3 text-red-500 flex items-center gap-1.5">
+          <AlertTriangle size={15} /> אזור מסוכן
+        </h3>
+        <button onClick={() => {
+          if (!confirm('למחוק את כל הנתונים הפיננסיים? פעולה זו אינה הפיכה.')) return;
+          onClearAll();
+        }}
+          className="w-full flex items-center gap-2 justify-center py-2.5 rounded-xl border border-red-200 text-red-500 text-sm font-medium">
+          <Trash2 size={15} /> מחק את כל הנתונים
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ─────────────── PIN lock ─────────────── */
 
 const PIN_KEY = 'finance_pin';
@@ -1592,7 +1926,7 @@ function Overview({
 
 /* ─────────────── Main page ─────────────── */
 
-type MainTab = 'overview' | 'accounts' | 'budget' | 'recurring' | 'goals' | 'converter';
+type MainTab = 'overview' | 'accounts' | 'budget' | 'recurring' | 'goals' | 'converter' | 'stats' | 'settings';
 
 export default function Finance() {
   const toast = useToast();
@@ -1693,6 +2027,19 @@ export default function Finance() {
     toast.success('חיסכון עודכן ✓');
   };
 
+  const importData = (d: FinanceData) => {
+    setAccounts(d.accounts ?? []);
+    setTxs(d.txs ?? []);
+    setBudgets(d.budgets ?? []);
+    setRecurring(d.recurring ?? []);
+    setGoals(d.goals ?? []);
+  };
+
+  const clearAll = () => {
+    setAccounts([]); setTxs([]); setBudgets([]); setRecurring([]); setGoals([]);
+    toast.success('כל הנתונים נמחקו');
+  };
+
   const lockApp = () => {
     sessionStorage.removeItem(PIN_SESSION);
     setUnlocked(false);
@@ -1765,31 +2112,33 @@ export default function Finance() {
         </div>
       </div>
 
-      {/* Tab bar — two rows */}
+      {/* Tab bar — three rows */}
       <div className="mb-4 space-y-1">
         <div className="flex rounded-xl overflow-hidden border border-etsy-border bg-white">
           {([
-            { key: 'overview',  label: 'סקירה',    icon: <LayoutDashboard size={13} /> },
-            { key: 'accounts',  label: 'חשבונות',  icon: <Wallet size={13} /> },
-            { key: 'budget',    label: 'תקציב',    icon: <Target size={13} /> },
+            { key: 'overview',  label: 'סקירה',   icon: <LayoutDashboard size={12} /> },
+            { key: 'accounts',  label: 'חשבונות', icon: <Wallet size={12} /> },
+            { key: 'budget',    label: 'תקציב',   icon: <Target size={12} /> },
+            { key: 'stats',     label: 'סטטיסטיקה', icon: <BarChartIcon size={12} /> },
           ] as { key: MainTab; label: string; icon: React.ReactNode }[]).map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
-              className={`flex-1 py-2 text-xs font-medium flex items-center justify-center gap-1 relative transition-colors ${tab === t.key ? 'bg-etsy-orange text-white' : 'text-etsy-gray'}`}>
+              className={`flex-1 py-2 text-[11px] font-medium flex flex-col items-center gap-0.5 relative transition-colors ${tab === t.key ? 'bg-etsy-orange text-white' : 'text-etsy-gray'}`}>
               {t.icon} {t.label}
             </button>
           ))}
         </div>
         <div className="flex rounded-xl overflow-hidden border border-etsy-border bg-white">
           {([
-            { key: 'recurring', label: 'קבועים',      icon: <RefreshCw size={13} />, badge: urgentCount },
-            { key: 'goals',     label: 'יעדים',        icon: <PiggyBank size={13} /> },
-            { key: 'converter', label: 'ממיר',         icon: <Zap size={13} /> },
+            { key: 'recurring', label: 'קבועים', icon: <RefreshCw size={12} />, badge: urgentCount },
+            { key: 'goals',     label: 'יעדים',  icon: <PiggyBank size={12} /> },
+            { key: 'converter', label: 'ממיר',   icon: <Zap size={12} /> },
+            { key: 'settings',  label: 'הגדרות', icon: <Settings size={12} /> },
           ] as { key: MainTab; label: string; icon: React.ReactNode; badge?: number }[]).map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
-              className={`flex-1 py-2 text-xs font-medium flex items-center justify-center gap-1 relative transition-colors ${tab === t.key ? 'bg-etsy-orange text-white' : 'text-etsy-gray'}`}>
+              className={`flex-1 py-2 text-[11px] font-medium flex flex-col items-center gap-0.5 relative transition-colors ${tab === t.key ? 'bg-etsy-orange text-white' : 'text-etsy-gray'}`}>
               {t.icon} {t.label}
               {t.badge ? (
-                <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-red-500 text-white rounded-full text-[9px] flex items-center justify-center">{t.badge}</span>
+                <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-red-500 text-white rounded-full text-[9px] flex items-center justify-center">{t.badge}</span>
               ) : null}
             </button>
           ))}
@@ -1911,6 +2260,21 @@ export default function Finance() {
 
       {/* Converter tab */}
       {tab === 'converter' && <CurrencyConverter />}
+
+      {/* Statistics tab */}
+      {tab === 'stats' && <StatisticsPanel txs={txs} />}
+
+      {/* Settings tab */}
+      {tab === 'settings' && (
+        <SettingsPanel
+          data={{ accounts, txs, budgets, recurring, goals, version: 1 }}
+          onImport={importData}
+          onClearAll={clearAll}
+          onSetPin={() => setPinMode(localStorage.getItem(PIN_KEY) ? 'change' : 'set')}
+          onRemovePin={removePin}
+          onLock={lockApp}
+        />
+      )}
     </div>
   );
 }
