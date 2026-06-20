@@ -14,7 +14,7 @@
     "start:discord": "node dist/discord-main.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.105.0",
+    "openai": "^4.67.0",
     "@discordjs/rest": "^2.6.1",
     "@types/form-data": "^2.2.1",
     "@types/node-telegram-bot-api": "^0.64.15",

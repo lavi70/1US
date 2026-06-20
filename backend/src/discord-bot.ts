@@ -10,13 +10,13 @@ import { exec, execSync } from 'child_process';
 import { promisify } from 'util';
 import * as os from 'os';
 import * as fs from 'fs';
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 
 const execAsync = promisify(exec);
 
 const TOKEN = process.env.DISCORD_BOT_TOKEN || '';
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '';
-const anthropic = new Anthropic({apiKey: process.env.ANTHROPIC_API_KEY||''});
+const openai = new OpenAI({apiKey: process.env.OPENAI_API_KEY||''});
 
 if (!TOKEN || !CLIENT_ID) { console.error('❌ DISCORD_BOT_TOKEN or DISCORD_CLIENT_ID is not set'); process.exit(1); }
 
@@ -1014,8 +1014,8 @@ client.on('interactionCreate', async (interaction: any) => {
   //  AI COMMANDS
   // ══════════════════════════════════════════════════════
   if (['ask','chat','summarize','code','translate-ai'].includes(commandName)) {
-    if (!process.env.ANTHROPIC_API_KEY) {
-      return interaction.editReply({embeds:[errEmbed('ANTHROPIC_API_KEY לא מוגדר ב-Railway')]});
+    if (!process.env.OPENAI_API_KEY) {
+      return interaction.editReply({embeds:[errEmbed('OPENAI_API_KEY לא מוגדר ב-Railway')]});
     }
 
     let prompt = '';
@@ -1038,20 +1038,19 @@ client.on('interactionCreate', async (interaction: any) => {
     }
 
     try {
-      const msg = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
         max_tokens: 1024,
-        system: systemPrompt,
-        messages: [{role:'user', content:prompt}],
+        messages: [{role:'system',content:systemPrompt},{role:'user',content:prompt}],
       });
-      const response = msg.content[0].type === 'text' ? msg.content[0].text : 'שגיאה';
+      const response = completion.choices[0]?.message?.content || 'שגיאה';
 
       const cmdEmoji = commandName==='code'?'💻':commandName==='summarize'?'📝':commandName==='translate-ai'?'🌐':'🤖';
       const e = new EmbedBuilder()
         .setTitle(`${cmdEmoji} Yaniv AI`)
         .setDescription(response.slice(0,4000))
-        .setColor(0x764ba2)
-        .setFooter({text:`שאל: ${user.username} | Powered by Claude AI 🚀`})
+        .setColor(0x10a37f)
+        .setFooter({text:`שאל: ${user.username} | Powered by ChatGPT 🚀`})
         .setTimestamp();
       return interaction.editReply({embeds:[e]});
     } catch(e:any) {
@@ -1444,18 +1443,20 @@ client.on('messageCreate', async (message: any) => {
   }
 
   // AI — ענה כשמזכירים את הבוט
-  if (message.mentions?.has(client.user) && process.env.ANTHROPIC_API_KEY) {
+  if (message.mentions?.has(client.user) && process.env.OPENAI_API_KEY) {
     const content = message.content.replace(/<@!?\d+>/g,'').trim();
     if (!content) return message.reply('שאל אותי משהו! 🤖').catch(()=>{});
     try {
       message.channel.sendTyping().catch(()=>{});
-      const msg = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
         max_tokens: 512,
-        system: 'אתה עוזר AI חכם בשם Yaniv Bot. ענה בעברית, היה קצר וידידותי.',
-        messages: [{role:'user', content}],
+        messages: [
+          {role:'system', content:'אתה עוזר AI חכם בשם Yaniv Bot. ענה בעברית, היה קצר וידידותי.'},
+          {role:'user', content},
+        ],
       });
-      const reply = msg.content[0].type==='text' ? msg.content[0].text : '...';
+      const reply = completion.choices[0]?.message?.content || '...';
       message.reply(`🤖 **Yaniv AI:** ${reply.slice(0,1900)}`).catch(()=>{});
     } catch(e:any) {
       message.reply(`❌ שגיאת AI: ${e.message?.slice(0,100)}`).catch(()=>{});
