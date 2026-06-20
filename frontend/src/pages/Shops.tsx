@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, Link, Unlink, ChevronDown, ChevronUp, Globe } from 'lucide-react';
+import { Plus, Trash2, Link, Unlink, ChevronDown, ChevronUp, Shield, CheckCircle, XCircle } from 'lucide-react';
 import { shopsApi, authApi } from '../services/api';
 import { useToast } from '../components/Toast';
 
@@ -126,44 +126,59 @@ function AddShopForm({ onSubmit, onCancel, loading }: { onSubmit: (d: any) => vo
           <input className="input" placeholder="My Etsy Store" value={name} onChange={e => setName(e.target.value)} />
         </div>
         <button type="button" onClick={() => setShowProxy(!showProxy)}
-          className="flex items-center gap-1 text-sm text-etsy-orange">
-          <Globe size={14} /> הגדרות פרוקסי {showProxy ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          className="flex items-center gap-1 text-sm text-etsy-orange font-medium">
+          <Shield size={14} /> פרוקסי {showProxy ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          {proxy.host && <span className="text-green-600 text-xs ml-1">● פעיל</span>}
         </button>
         {showProxy && (
-          <div className="space-y-2 border border-etsy-border rounded-lg p-3 bg-gray-50">
-            <div>
-              <label className="label text-xs">סוג פרוקסי</label>
-              <select className="input text-sm" value={proxy.type} onChange={e => setProxy({ ...proxy, type: e.target.value as ProxyType })}>
-                <option value="socks5">SOCKS5 (AdsPower)</option>
-                <option value="socks4">SOCKS4</option>
-                <option value="http">HTTP</option>
-                <option value="https">HTTPS</option>
-              </select>
+          <div className="border border-blue-100 rounded-xl p-3 bg-blue-50 space-y-3">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">הגדרות פרוקסי</span>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="label text-xs">כתובת IP</label>
+            {/* Proxy type pills */}
+            <div className="flex gap-1 flex-wrap">
+              {(['socks5','socks4','http','https'] as ProxyType[]).map(t => (
+                <button key={t} type="button"
+                  onClick={() => setProxy({ ...proxy, type: t })}
+                  className={`px-3 py-1 rounded-full text-xs font-mono font-semibold border transition-all ${proxy.type === t ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                  {t === 'socks5' ? '⚡ SOCKS5' : t.toUpperCase()}
+                </button>
+              ))}
+            </div>
+            {proxy.type === 'socks5' && (
+              <div className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-100 rounded-lg px-2 py-1.5">
+                <span>✓</span> מומלץ לAdsPower — בחר SOCKS5 בהגדרות הפרופיל
+              </div>
+            )}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="col-span-2">
+                <label className="label text-xs text-gray-500">כתובת IP</label>
                 <input className="input text-sm font-mono" placeholder="192.168.1.1" value={proxy.host}
                   onChange={e => setProxy({ ...proxy, host: e.target.value })} />
               </div>
               <div>
-                <label className="label text-xs">פורט</label>
+                <label className="label text-xs text-gray-500">פורט</label>
                 <input className="input text-sm font-mono" placeholder="1080" value={proxy.port}
                   onChange={e => setProxy({ ...proxy, port: e.target.value })} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="label text-xs">שם משתמש</label>
-                <input className="input text-sm" value={proxy.username}
+                <label className="label text-xs text-gray-500">שם משתמש</label>
+                <input className="input text-sm" placeholder="אופציונלי" value={proxy.username}
                   onChange={e => setProxy({ ...proxy, username: e.target.value })} />
               </div>
               <div>
-                <label className="label text-xs">סיסמה</label>
-                <input className="input text-sm" type="password" value={proxy.password}
+                <label className="label text-xs text-gray-500">סיסמה</label>
+                <input className="input text-sm" type="password" placeholder="אופציונלי" value={proxy.password}
                   onChange={e => setProxy({ ...proxy, password: e.target.value })} />
               </div>
             </div>
+            {proxy.host && proxy.port && (
+              <div className="text-xs font-mono text-gray-500 bg-white rounded px-2 py-1 border">
+                {buildProxyUrl(proxy.type, proxy.host, proxy.port)}
+              </div>
+            )}
           </div>
         )}
         <div className="flex gap-2">
@@ -227,40 +242,63 @@ function ShopItem({ shop, expanded, onToggle, onConnect, onDisconnect, onDelete 
       {expanded && (
         <div className="border-t border-etsy-border px-4 pb-4 pt-3 space-y-3">
           {/* Proxy Settings */}
-          <div className="space-y-2">
-            <label className="label flex items-center gap-1"><Globe size={14} /> הגדרות פרוקסי</label>
-            <select className="input text-sm" value={proxy.type} onChange={e => setProxy({ ...proxy, type: e.target.value as ProxyType })}>
-              <option value="socks5">SOCKS5 (AdsPower)</option>
-              <option value="socks4">SOCKS4</option>
-              <option value="http">HTTP</option>
-              <option value="https">HTTPS</option>
-            </select>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="label text-xs">כתובת IP</label>
+          <div className="border border-blue-100 rounded-xl p-3 bg-blue-50 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-700 uppercase tracking-wide">
+                <Shield size={12} /> פרוקסי
+              </div>
+              {hasProxy
+                ? <span className="flex items-center gap-1 text-xs text-green-600"><CheckCircle size={12} /> פעיל</span>
+                : <span className="flex items-center gap-1 text-xs text-gray-400"><XCircle size={12} /> לא מוגדר</span>
+              }
+            </div>
+            {/* Type pills */}
+            <div className="flex gap-1 flex-wrap">
+              {(['socks5','socks4','http','https'] as ProxyType[]).map(t => (
+                <button key={t} type="button"
+                  onClick={() => setProxy({ ...proxy, type: t })}
+                  className={`px-3 py-1 rounded-full text-xs font-mono font-semibold border transition-all ${proxy.type === t ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                  {t === 'socks5' ? '⚡ SOCKS5' : t.toUpperCase()}
+                </button>
+              ))}
+            </div>
+            {proxy.type === 'socks5' && (
+              <div className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-100 rounded-lg px-2 py-1.5">
+                <span>✓</span> מומלץ לAdsPower — בחר SOCKS5 בהגדרות הפרופיל
+              </div>
+            )}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="col-span-2">
+                <label className="label text-xs text-gray-500">כתובת IP</label>
                 <input className="input text-sm font-mono" placeholder="192.168.1.1"
                   value={proxy.host} onChange={e => setProxy({ ...proxy, host: e.target.value })} />
               </div>
               <div>
-                <label className="label text-xs">פורט</label>
+                <label className="label text-xs text-gray-500">פורט</label>
                 <input className="input text-sm font-mono" placeholder="1080"
                   value={proxy.port} onChange={e => setProxy({ ...proxy, port: e.target.value })} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="label text-xs">שם משתמש</label>
-                <input className="input text-sm" placeholder="user"
+                <label className="label text-xs text-gray-500">שם משתמש</label>
+                <input className="input text-sm" placeholder="אופציונלי"
                   value={proxy.username} onChange={e => setProxy({ ...proxy, username: e.target.value })} />
               </div>
               <div>
-                <label className="label text-xs">סיסמה</label>
-                <input className="input text-sm" type="password" placeholder="••••••"
+                <label className="label text-xs text-gray-500">סיסמה</label>
+                <input className="input text-sm" type="password" placeholder="אופציונלי"
                   value={proxy.password} onChange={e => setProxy({ ...proxy, password: e.target.value })} />
               </div>
             </div>
-            <button onClick={handleSaveProxy} className="btn-secondary text-sm w-full">
-              {updateMutation.isPending ? 'שומר...' : 'שמור פרוקסי'}
+            {proxy.host && proxy.port && (
+              <div className="text-xs font-mono text-gray-500 bg-white rounded px-2 py-1 border truncate">
+                {buildProxyUrl(proxy.type, proxy.host, proxy.port)}
+              </div>
+            )}
+            <button onClick={handleSaveProxy} disabled={updateMutation.isPending}
+              className="w-full py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold active:scale-95 transition-all disabled:opacity-50">
+              {updateMutation.isPending ? '...' : '💾 שמור פרוקסי'}
             </button>
           </div>
 
