@@ -517,18 +517,19 @@ function TransferForm({
 /* ─────────────── Transaction form ─────────────── */
 
 function TxForm({
-  account, onSave, onCancel,
+  account, onSave, onCancel, initial,
 }: {
   account: Account;
   onSave: (tx: Omit<Transaction, 'id'>) => void;
   onCancel: () => void;
+  initial?: Transaction;
 }) {
   const sym = CURRENCY_SYMBOLS[account.currency] ?? account.currency;
-  const [type, setType] = useState<TxType>('income');
-  const [amount, setAmount] = useState('');
-  const [note, setNote] = useState('');
-  const [category, setCategory] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [type, setType] = useState<TxType>(initial?.type ?? 'income');
+  const [amount, setAmount] = useState(initial ? String(initial.amount) : '');
+  const [note, setNote] = useState(initial?.note ?? '');
+  const [category, setCategory] = useState(initial?.category ?? '');
+  const [date, setDate] = useState(initial?.date ?? new Date().toISOString().slice(0, 10));
   const cats = type === 'income' ? INCOME_CATS : EXPENSE_CATS;
 
   const submit = () => {
@@ -539,7 +540,7 @@ function TxForm({
 
   return (
     <div className="card p-4 mb-3">
-      <h3 className="font-semibold mb-3 text-sm">הוספת תנועה — {account.name}</h3>
+      <h3 className="font-semibold mb-3 text-sm">{initial ? 'עריכת תנועה' : 'הוספת תנועה'} — {account.name}</h3>
       <div className="flex rounded-lg overflow-hidden border border-etsy-border mb-3">
         <button onClick={() => setType('income')}
           className={`flex-1 py-2 text-sm font-medium flex items-center justify-center gap-1.5 transition-colors ${type === 'income' ? 'bg-green-500 text-white' : 'bg-white text-etsy-gray'}`}>
@@ -698,17 +699,20 @@ function ChartView({ txs, currency, sym }: { txs: Transaction[]; currency: strin
 /* ─────────────── Account detail screen ─────────────── */
 
 function AccountDetail({
-  account, allAccounts, txs, onAddTx, onDeleteTx, onBack,
+  account, allAccounts, txs, onAddTx, onDeleteTx, onEditTx, onBack,
 }: {
   account: Account;
   allAccounts: Account[];
   txs: Transaction[];
   onAddTx: (txs: Omit<Transaction, 'id'>[]) => void;
   onDeleteTx: (id: string) => void;
+  onEditTx: (id: string, data: Omit<Transaction, 'id'>) => void;
   onBack: () => void;
 }) {
   const [mode, setMode] = useState<'list' | 'add' | 'transfer' | 'charts'>('list');
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [search, setSearch] = useState('');
+  const [filterType, setFilterType] = useState<TxType | 'all'>('all');
   const sym = CURRENCY_SYMBOLS[account.currency] ?? account.currency;
   const meta = ACCOUNT_TYPES.find(t => t.type === account.type)!;
 
@@ -716,9 +720,9 @@ function AccountDetail({
     .filter(t => t.accountId === account.id)
     .sort((a, b) => b.date.localeCompare(a.date));
 
-  const filtered = search.trim()
-    ? accountTxs.filter(t => t.note.includes(search) || t.category.includes(search))
-    : accountTxs;
+  const filtered = accountTxs
+    .filter(t => filterType === 'all' || t.type === filterType)
+    .filter(t => !search.trim() || t.note.includes(search) || t.category.includes(search));
 
   const totalIn = accountTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const totalOut = accountTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
@@ -789,8 +793,18 @@ function AccountDetail({
         </button>
       </div>
 
+      {/* Edit transaction overlay */}
+      {editingTx && (
+        <TxForm
+          account={account}
+          initial={editingTx}
+          onSave={data => { onEditTx(editingTx.id, data); setEditingTx(null); }}
+          onCancel={() => setEditingTx(null)}
+        />
+      )}
+
       {/* Sub-panels */}
-      {mode === 'add' && (
+      {!editingTx && mode === 'add' && (
         <TxForm account={account}
           onSave={tx => { onAddTx([tx]); setMode('list'); }}
           onCancel={() => setMode('list')} />
@@ -805,18 +819,26 @@ function AccountDetail({
         <ChartView txs={accountTxs} currency={account.currency} sym={sym} />
       )}
 
-      {/* Search */}
-      <div className="relative mb-3">
+      {/* Search + filter */}
+      <div className="relative mb-2">
         <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-etsy-gray" />
         <input className="input pr-8 text-sm" value={search}
           onChange={e => setSearch(e.target.value)} placeholder="חיפוש בתנועות..." />
+      </div>
+      <div className="flex gap-1.5 mb-3">
+        {(['all','income','expense'] as const).map(f => (
+          <button key={f} onClick={() => setFilterType(f)}
+            className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${filterType === f ? 'bg-etsy-orange text-white border-etsy-orange' : 'bg-white text-etsy-gray border-etsy-border'}`}>
+            {f === 'all' ? `הכל (${accountTxs.length})` : f === 'income' ? 'הכנסות' : 'הוצאות'}
+          </button>
+        ))}
       </div>
 
       {/* List header */}
       <div className="flex items-center gap-2 mb-2">
         <List size={15} className="text-etsy-gray" />
         <h2 className="font-semibold text-sm">תנועות</h2>
-        <span className="badge-gray">{accountTxs.length}</span>
+        <span className="badge-gray">{filtered.length}</span>
       </div>
 
       {filtered.length === 0 && <p className="text-center text-etsy-gray text-sm py-8">אין תנועות</p>}
@@ -844,6 +866,12 @@ function AccountDetail({
                 {tx.type === 'income' ? '+' : isTransfer ? '→' : '-'}{sym}{tx.amount.toLocaleString()}
               </p>
             </div>
+            {!isTransfer && (
+              <button onClick={() => { setEditingTx(tx); setMode('list'); }}
+                className="p-1 text-etsy-gray hover:text-etsy-orange flex-shrink-0">
+                <Edit2 size={13} />
+              </button>
+            )}
             <button onClick={() => onDeleteTx(tx.id)} className="p-1 text-etsy-gray hover:text-red-400 flex-shrink-0">
               <Trash2 size={13} />
             </button>
@@ -1311,6 +1339,118 @@ function CurrencyConverter() {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+/* ─────────────── Insights ─────────────── */
+
+interface Insight {
+  type: 'warning' | 'positive' | 'info';
+  title: string;
+  detail: string;
+}
+
+function InsightsPanel({ txs, budgets, recurring }: { txs: Transaction[]; budgets: Budget[]; recurring: Recurring[] }) {
+  const insights: Insight[] = useMemo(() => {
+    const result: Insight[] = [];
+    const now = new Date();
+    const thisM = thisMonth();
+    const prevM = addMonths(thisM, -1).slice(0, 7);
+
+    const monthExp = (month: string, cat?: string) =>
+      txs.filter(t => t.type === 'expense' && t.date.startsWith(month) && (!cat || t.category === cat))
+         .reduce((s, t) => s + t.amount, 0);
+    const monthInc = (month: string) =>
+      txs.filter(t => t.type === 'income' && t.date.startsWith(month)).reduce((s, t) => s + t.amount, 0);
+
+    const curExp = monthExp(thisM);
+    const prevExp = monthExp(prevM);
+    const curInc = monthInc(thisM);
+
+    // 1. Expenses higher than last month
+    if (prevExp > 0 && curExp > prevExp * 1.2) {
+      const pct = Math.round(((curExp - prevExp) / prevExp) * 100);
+      result.push({ type: 'warning', title: `הוצאות גבוהות ב-${pct}% מהחודש שעבר`, detail: `החודש: ${curExp.toLocaleString()} | חודש שעבר: ${prevExp.toLocaleString()}` });
+    }
+
+    // 2. Good savings this month
+    if (curInc > 0 && curExp < curInc * 0.7) {
+      result.push({ type: 'positive', title: 'חיסכון מצוין החודש! 🎉', detail: `חסכת ${Math.round(100 - (curExp / curInc) * 100)}% מההכנסות` });
+    }
+
+    // 3. Category spikes
+    const expCats = [...new Set(txs.filter(t => t.type === 'expense').map(t => t.category))];
+    expCats.forEach(cat => {
+      const cur = monthExp(thisM, cat);
+      const prev = monthExp(prevM, cat);
+      if (prev > 0 && cur > prev * 1.5 && cur > 100) {
+        const pct = Math.round(((cur - prev) / prev) * 100);
+        result.push({ type: 'warning', title: `${cat} — עלייה של ${pct}%`, detail: `החודש: ${cur.toLocaleString()} לעומת ${prev.toLocaleString()} בחודש שעבר` });
+      }
+    });
+
+    // 4. Budget overruns
+    const monthBudgets = budgets.filter(b => b.month === thisM || b.month === 'monthly');
+    monthBudgets.forEach(b => {
+      const spent = monthExp(thisM, b.category) // simplified, ignores currency
+      if (spent > b.amount) {
+        result.push({ type: 'warning', title: `חריגה בתקציב ${b.category}`, detail: `הוצאת ${spent.toLocaleString()} מתוך ${b.amount.toLocaleString()} שתוקצב` });
+      } else if (spent > b.amount * 0.85) {
+        result.push({ type: 'info', title: `תקציב ${b.category} — כמעט נגמר`, detail: `${Math.round((spent / b.amount) * 100)}% נוצל` });
+      }
+    });
+
+    // 5. Overdue recurring
+    const overdue = recurring.filter(r => daysUntil(r.nextDate) < 0);
+    if (overdue.length > 0) {
+      result.push({ type: 'warning', title: `${overdue.length} תשלום${overdue.length > 1 ? 'ים' : ''} באיחור`, detail: overdue.map(r => r.name).join(', ') });
+    }
+
+    // 6. No income this month
+    if (curInc === 0 && now.getDate() > 10) {
+      result.push({ type: 'info', title: 'לא נרשמו הכנסות החודש', detail: 'האם שכחת לרשום הכנסה?' });
+    }
+
+    // 7. Positive: expenses lower than last month
+    if (prevExp > 0 && curExp < prevExp * 0.85) {
+      const pct = Math.round(((prevExp - curExp) / prevExp) * 100);
+      result.push({ type: 'positive', title: `חסכת ${pct}% על הוצאות לעומת החודש שעבר 💪`, detail: `${prevExp.toLocaleString()} → ${curExp.toLocaleString()}` });
+    }
+
+    return result.slice(0, 8);
+  }, [txs, budgets, recurring]);
+
+  const colors = { warning: 'border-red-200 bg-red-50', positive: 'border-green-200 bg-green-50', info: 'border-blue-200 bg-blue-50' };
+  const icons = { warning: <AlertTriangle size={14} className="text-red-500 flex-shrink-0" />, positive: <Trophy size={14} className="text-green-500 flex-shrink-0" />, info: <Bell size={14} className="text-blue-400 flex-shrink-0" /> };
+
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 mb-3">
+        <Activity size={15} className="text-etsy-orange" />
+        <h2 className="font-semibold text-sm">תובנות חכמות</h2>
+      </div>
+      {insights.length === 0 ? (
+        <div className="text-center py-10">
+          <ShieldCheck size={36} className="mx-auto text-green-400 mb-2" />
+          <p className="font-semibold text-green-600 mb-1">הכל נראה מצוין!</p>
+          <p className="text-xs text-etsy-gray">לא זוהו דגלים אדומים. הוסף יותר תנועות לניתוח עמוק יותר.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {insights.map((ins, i) => (
+            <div key={i} className={`card p-3 border ${colors[ins.type]}`}>
+              <div className="flex items-start gap-2">
+                {icons[ins.type]}
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{ins.title}</p>
+                  <p className="text-xs text-etsy-gray mt-0.5">{ins.detail}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1926,7 +2066,7 @@ function Overview({
 
 /* ─────────────── Main page ─────────────── */
 
-type MainTab = 'overview' | 'accounts' | 'budget' | 'recurring' | 'goals' | 'converter' | 'stats' | 'settings';
+type MainTab = 'overview' | 'accounts' | 'budget' | 'recurring' | 'goals' | 'converter' | 'stats' | 'insights' | 'settings';
 
 export default function Finance() {
   const toast = useToast();
@@ -1990,6 +2130,11 @@ export default function Finance() {
   const deleteTx = (id: string) => {
     setTxs(prev => prev.filter(t => t.id !== id));
     toast.success('תנועה נמחקה');
+  };
+
+  const editTx = (id: string, data: Omit<Transaction, 'id'>) => {
+    setTxs(prev => prev.map(t => t.id === id ? { ...t, ...data } : t));
+    toast.success('תנועה עודכנה ✓');
   };
 
   const saveBudget = (b: Omit<Budget, 'id'>) => {
@@ -2074,6 +2219,7 @@ export default function Finance() {
         txs={txs}
         onAddTx={addTxs}
         onDeleteTx={deleteTx}
+        onEditTx={editTx}
         onBack={() => setDetail(null)}
       />
     );
@@ -2116,10 +2262,9 @@ export default function Finance() {
       <div className="mb-4 space-y-1">
         <div className="flex rounded-xl overflow-hidden border border-etsy-border bg-white">
           {([
-            { key: 'overview',  label: 'סקירה',   icon: <LayoutDashboard size={12} /> },
-            { key: 'accounts',  label: 'חשבונות', icon: <Wallet size={12} /> },
-            { key: 'budget',    label: 'תקציב',   icon: <Target size={12} /> },
-            { key: 'stats',     label: 'סטטיסטיקה', icon: <BarChartIcon size={12} /> },
+            { key: 'overview',  label: 'סקירה',    icon: <LayoutDashboard size={12} /> },
+            { key: 'accounts',  label: 'חשבונות',  icon: <Wallet size={12} /> },
+            { key: 'budget',    label: 'תקציב',    icon: <Target size={12} /> },
           ] as { key: MainTab; label: string; icon: React.ReactNode }[]).map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
               className={`flex-1 py-2 text-[11px] font-medium flex flex-col items-center gap-0.5 relative transition-colors ${tab === t.key ? 'bg-etsy-orange text-white' : 'text-etsy-gray'}`}>
@@ -2129,10 +2274,10 @@ export default function Finance() {
         </div>
         <div className="flex rounded-xl overflow-hidden border border-etsy-border bg-white">
           {([
-            { key: 'recurring', label: 'קבועים', icon: <RefreshCw size={12} />, badge: urgentCount },
-            { key: 'goals',     label: 'יעדים',  icon: <PiggyBank size={12} /> },
-            { key: 'converter', label: 'ממיר',   icon: <Zap size={12} /> },
-            { key: 'settings',  label: 'הגדרות', icon: <Settings size={12} /> },
+            { key: 'recurring', label: 'קבועים',   icon: <RefreshCw size={12} />, badge: urgentCount },
+            { key: 'goals',     label: 'יעדים',    icon: <PiggyBank size={12} /> },
+            { key: 'insights',  label: 'תובנות',   icon: <Activity size={12} /> },
+            { key: 'stats',     label: 'סטטיסטיקה', icon: <BarChartIcon size={12} /> },
           ] as { key: MainTab; label: string; icon: React.ReactNode; badge?: number }[]).map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
               className={`flex-1 py-2 text-[11px] font-medium flex flex-col items-center gap-0.5 relative transition-colors ${tab === t.key ? 'bg-etsy-orange text-white' : 'text-etsy-gray'}`}>
@@ -2140,6 +2285,17 @@ export default function Finance() {
               {t.badge ? (
                 <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-red-500 text-white rounded-full text-[9px] flex items-center justify-center">{t.badge}</span>
               ) : null}
+            </button>
+          ))}
+        </div>
+        <div className="flex rounded-xl overflow-hidden border border-etsy-border bg-white">
+          {([
+            { key: 'converter', label: 'ממיר',    icon: <Zap size={12} /> },
+            { key: 'settings',  label: 'הגדרות',  icon: <Settings size={12} /> },
+          ] as { key: MainTab; label: string; icon: React.ReactNode }[]).map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)}
+              className={`flex-1 py-2 text-[11px] font-medium flex flex-col items-center gap-0.5 transition-colors ${tab === t.key ? 'bg-etsy-orange text-white' : 'text-etsy-gray'}`}>
+              {t.icon} {t.label}
             </button>
           ))}
         </div>
@@ -2260,6 +2416,11 @@ export default function Finance() {
 
       {/* Converter tab */}
       {tab === 'converter' && <CurrencyConverter />}
+
+      {/* Insights tab */}
+      {tab === 'insights' && (
+        <InsightsPanel txs={txs} budgets={budgets} recurring={recurring} />
+      )}
 
       {/* Statistics tab */}
       {tab === 'stats' && <StatisticsPanel txs={txs} />}
