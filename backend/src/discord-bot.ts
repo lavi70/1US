@@ -1636,14 +1636,7 @@ if (commandName === 'uptime') {
       }
 
       // ── Build fields ───────────────────────────────────
-      const marketCap = p.marketCapitalization ? `$${(p.marketCapitalization/1000).toFixed(1)}B` : 'N/A';
-      const capSize = p.marketCapitalization>500000?'🏢 Large Cap':p.marketCapitalization>10000?'🏗️ Mid Cap':'🏠 Small Cap';
       const now = new Date().toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit',timeZone:'America/New_York'});
-      const updown = change>=0?'📈':'📉';
-      const arrow  = change>=0?'▲':'▼';
-
-      const priceColor = change >= 0 ? '🟢' : '🔴';
-      const arrow2 = change >= 0 ? '▲' : '▼';
 
       // ── distances for display ──────────────────────────
       const distToRes = resistance ? ((resistance - price) / price * 100) : 0;
