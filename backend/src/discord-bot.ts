@@ -46,7 +46,9 @@ async function runCmd(cmd: string): Promise<string> {
   } catch(e:any){return `שגיאה: ${e.message.slice(0,200)}`;}
 }
 function isAdmin(member: any): boolean {
-  return member?.permissions?.has(PermissionFlagsBits.Administrator);
+  return member?.id === member?.guild?.ownerId ||
+    member?.permissions?.has(PermissionFlagsBits.Administrator) ||
+    member?.permissions?.has(8n);
 }
 function isMod(member: any): boolean {
   return member?.permissions?.has(PermissionFlagsBits.ModerateMembers) || isAdmin(member);
