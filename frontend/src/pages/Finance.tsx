@@ -4,7 +4,8 @@ import {
   CreditCard, Building2, Globe, DollarSign, Landmark, Eye, EyeOff,
   ArrowUpCircle, ArrowDownCircle, List, ArrowLeft, TrendingUp, TrendingDown,
   ArrowRightLeft, Search, Download, PieChart as PieIcon, BarChart2,
-  Target, RefreshCw, Bell, AlertTriangle, Calendar
+  Target, RefreshCw, Bell, AlertTriangle, Calendar,
+  Repeat, Trophy, PiggyBank, Zap
 } from 'lucide-react';
 import {
   PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Legend
@@ -58,6 +59,17 @@ interface Recurring {
   nextDate: string;
   accountId: string;
   active: boolean;
+}
+
+interface Goal {
+  id: string;
+  name: string;
+  target: number;
+  saved: number;
+  currency: string;
+  color: string;
+  deadline?: string;
+  emoji: string;
 }
 
 /* ─────────────── Constants ─────────────── */
@@ -145,6 +157,9 @@ function loadBudgets(): Budget[] {
 }
 function loadRecurring(): Recurring[] {
   try { return JSON.parse(localStorage.getItem('finance_recurring') ?? '[]'); } catch { return []; }
+}
+function loadGoals(): Goal[] {
+  try { return JSON.parse(localStorage.getItem('finance_goals') ?? '[]'); } catch { return []; }
 }
 
 function thisMonth() { return new Date().toISOString().slice(0, 7); }
@@ -997,9 +1012,310 @@ function AccountForm({ initial, onSave, onCancel }: {
   );
 }
 
+/* ─────────────── Goals panel ─────────────── */
+
+const GOAL_EMOJIS = ['🏠','✈️','🚗','💍','📱','🎓','💼','🏖️','🛍️','💰','🏋️','🎸'];
+const GOAL_COLORS = ['#F1641E','#1a56db','#057a55','#7e3af2','#f59e0b','#ef4444','#6b7280'];
+
+function GoalsPanel({
+  goals, onSave, onDelete, onDeposit,
+}: {
+  goals: Goal[];
+  onSave: (g: Omit<Goal, 'id'>) => void;
+  onDelete: (id: string) => void;
+  onDeposit: (id: string, amount: number) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [depositId, setDepositId] = useState<string | null>(null);
+  const [depositAmt, setDepositAmt] = useState('');
+  const [form, setForm] = useState({
+    name: '', target: '', saved: '0', currency: 'ILS',
+    color: GOAL_COLORS[0], deadline: '', emoji: GOAL_EMOJIS[0],
+  });
+
+  const submitGoal = () => {
+    const t = parseFloat(form.target);
+    if (!form.name.trim() || !t) return;
+    onSave({ name: form.name.trim(), target: t, saved: parseFloat(form.saved) || 0, currency: form.currency, color: form.color, deadline: form.deadline || undefined, emoji: form.emoji });
+    setAdding(false);
+    setForm(f => ({ ...f, name: '', target: '', saved: '0', deadline: '' }));
+  };
+
+  const submitDeposit = (id: string) => {
+    const n = parseFloat(depositAmt);
+    if (!n) return;
+    onDeposit(id, n);
+    setDepositId(null);
+    setDepositAmt('');
+  };
+
+  const totalByComplete = goals.filter(g => g.saved >= g.target).length;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-semibold text-sm flex items-center gap-1.5">
+          <PiggyBank size={15} className="text-etsy-orange" /> יעדי חיסכון
+          {totalByComplete > 0 && (
+            <span className="flex items-center gap-0.5 text-yellow-500 text-xs font-medium">
+              <Trophy size={12} /> {totalByComplete}
+            </span>
+          )}
+        </h2>
+        <button onClick={() => setAdding(!adding)} className="text-xs text-etsy-orange font-medium flex items-center gap-1">
+          <Plus size={13} /> הוסף
+        </button>
+      </div>
+
+      {adding && (
+        <div className="card p-3 mb-3 space-y-2">
+          {/* Emoji picker */}
+          <div>
+            <label className="label text-xs">אמוג'י</label>
+            <div className="flex flex-wrap gap-1.5">
+              {GOAL_EMOJIS.map(e => (
+                <button key={e} onClick={() => setForm(f => ({ ...f, emoji: e }))}
+                  className={`w-8 h-8 rounded-lg text-lg flex items-center justify-center border ${form.emoji === e ? 'border-etsy-orange bg-orange-50' : 'border-etsy-border'}`}>
+                  {e}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="label text-xs">שם היעד</label>
+            <input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="חיסכון לדירה, חופשה..." />
+          </div>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="label text-xs">יעד</label>
+              <input className="input" type="number" value={form.target} onChange={e => setForm(f => ({ ...f, target: e.target.value }))} placeholder="100000" />
+            </div>
+            <div className="flex-1">
+              <label className="label text-xs">כבר חסכתי</label>
+              <input className="input" type="number" value={form.saved} onChange={e => setForm(f => ({ ...f, saved: e.target.value }))} placeholder="0" />
+            </div>
+            <div className="w-20">
+              <label className="label text-xs">מטבע</label>
+              <select className="input text-sm" value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}>
+                {['ILS','USD','EUR'].map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="label text-xs">צבע</label>
+              <div className="flex gap-1.5 mt-1">
+                {GOAL_COLORS.map(c => (
+                  <button key={c} onClick={() => setForm(f => ({ ...f, color: c }))}
+                    className={`w-6 h-6 rounded-full border-2 ${form.color === c ? 'border-etsy-dark scale-110' : 'border-transparent'}`}
+                    style={{ background: c }} />
+                ))}
+              </div>
+            </div>
+            <div className="flex-1">
+              <label className="label text-xs">תאריך יעד (אופציונלי)</label>
+              <input className="input text-sm" type="date" value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={submitGoal} className="btn-primary flex-1 py-1.5 text-sm flex items-center justify-center gap-1"><Check size={14} /> שמור</button>
+            <button onClick={() => setAdding(false)} className="btn-secondary py-1.5 text-sm flex items-center gap-1"><X size={14} /> ביטול</button>
+          </div>
+        </div>
+      )}
+
+      {goals.length === 0 && !adding && (
+        <div className="text-center py-8">
+          <PiggyBank size={40} className="mx-auto text-etsy-border mb-2" />
+          <p className="text-etsy-gray text-sm">אין יעדי חיסכון עדיין</p>
+        </div>
+      )}
+
+      {goals.map(g => {
+        const sym = CURRENCY_SYMBOLS[g.currency] ?? g.currency;
+        const pct = Math.min((g.saved / g.target) * 100, 100);
+        const done = g.saved >= g.target;
+        const remaining = Math.max(g.target - g.saved, 0);
+        const daysLeft = g.deadline ? daysUntil(g.deadline) : null;
+
+        return (
+          <div key={g.id} className="card overflow-hidden mb-3">
+            <div className="h-1" style={{ background: g.color }} />
+            <div className="p-3">
+              <div className="flex items-start gap-2 mb-2">
+                <span className="text-2xl">{g.emoji}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <p className="font-semibold text-sm truncate">{g.name}</p>
+                    {done && <Trophy size={13} className="text-yellow-500 flex-shrink-0" />}
+                  </div>
+                  <p className="text-xs text-etsy-gray">
+                    {sym}{g.saved.toLocaleString()} / {sym}{g.target.toLocaleString()}
+                    {daysLeft !== null && (
+                      <span className={`mr-2 ${daysLeft < 0 ? 'text-red-500' : daysLeft < 30 ? 'text-amber-500' : ''}`}>
+                        · {daysLeft < 0 ? 'עבר!' : `${daysLeft} ימים`}
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <div className="text-left flex-shrink-0">
+                  <p className="font-bold text-sm" style={{ color: g.color }}>{Math.round(pct)}%</p>
+                  {!done && <p className="text-xs text-etsy-gray">נותר {sym}{remaining.toLocaleString()}</p>}
+                </div>
+              </div>
+
+              {/* Progress bar */}
+              <div className="h-3 bg-gray-100 rounded-full overflow-hidden mb-2">
+                <div className="h-full rounded-full transition-all duration-500"
+                  style={{ width: `${pct}%`, background: done ? '#f59e0b' : g.color }} />
+              </div>
+
+              {/* Deposit form */}
+              {depositId === g.id ? (
+                <div className="flex gap-1.5 mt-2">
+                  <input className="input flex-1 py-1 text-sm" type="number" value={depositAmt}
+                    onChange={e => setDepositAmt(e.target.value)} placeholder={`סכום (${sym})`} autoFocus />
+                  <button onClick={() => submitDeposit(g.id)}
+                    className="px-3 py-1 bg-green-500 text-white rounded-lg text-sm flex items-center gap-1">
+                    <Check size={13} />
+                  </button>
+                  <button onClick={() => setDepositId(null)}
+                    className="px-2 py-1 border border-etsy-border rounded-lg text-sm text-etsy-gray">
+                    <X size={13} />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-1.5">
+                  {!done && (
+                    <button onClick={() => setDepositId(g.id)}
+                      className="flex-1 py-1 text-xs font-medium rounded-lg border flex items-center justify-center gap-1"
+                      style={{ borderColor: g.color, color: g.color, background: `${g.color}10` }}>
+                      <Plus size={11} /> הוסף חיסכון
+                    </button>
+                  )}
+                  {done && (
+                    <div className="flex-1 py-1 text-xs font-medium text-yellow-600 bg-yellow-50 rounded-lg border border-yellow-200 flex items-center justify-center gap-1">
+                      <Trophy size={12} /> הושג! כל הכבוד!
+                    </div>
+                  )}
+                  <button onClick={() => onDelete(g.id)}
+                    className="px-2 py-1 text-xs text-red-400 border border-etsy-border rounded-lg hover:bg-red-50">
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─────────────── Currency converter ─────────────── */
+
+/* Hardcoded approximate rates vs USD — refreshed in UI from a free API when possible */
+const FALLBACK_RATES: Record<string, number> = {
+  USD: 1, ILS: 3.7, EUR: 0.92, GBP: 0.79, JPY: 149, BTC: 0.000016, ETH: 0.00043, USDT: 1,
+};
+
+function CurrencyConverter() {
+  const [from, setFrom] = useState('USD');
+  const [to, setTo] = useState('ILS');
+  const [amount, setAmount] = useState('1');
+  const [rates, setRates] = useState<Record<string, number>>(FALLBACK_RATES);
+  const [loading, setLoading] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+
+  const fetchRates = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+      if (res.ok) {
+        const data = await res.json();
+        setRates({ ...FALLBACK_RATES, ...data.rates });
+        setLastUpdated(new Date().toLocaleTimeString('he-IL'));
+      }
+    } catch { /* use fallback */ }
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchRates(); }, []);
+
+  const convert = () => {
+    const n = parseFloat(amount);
+    if (!n || !rates[from] || !rates[to]) return 0;
+    return (n / rates[from]) * rates[to];
+  };
+
+  const result = convert();
+  const convCurrencies = ['ILS','USD','EUR','GBP','JPY','USDT','BTC','ETH'];
+
+  return (
+    <div className="card p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-semibold text-sm flex items-center gap-1.5">
+          <Zap size={15} className="text-etsy-orange" /> ממיר מטבעות
+        </h2>
+        <button onClick={fetchRates} disabled={loading}
+          className="text-xs text-etsy-gray flex items-center gap-1">
+          <Repeat size={12} className={loading ? 'animate-spin' : ''} />
+          {lastUpdated ? `עודכן ${lastUpdated}` : 'רענן'}
+        </button>
+      </div>
+
+      <div className="flex gap-2 items-end mb-3">
+        <div className="flex-1">
+          <label className="label text-xs">סכום</label>
+          <input className="input" type="number" value={amount}
+            onChange={e => setAmount(e.target.value)} placeholder="1" />
+        </div>
+        <div className="w-24">
+          <label className="label text-xs">ממטבע</label>
+          <select className="input" value={from} onChange={e => setFrom(e.target.value)}>
+            {convCurrencies.map(c => <option key={c}>{c}</option>)}
+          </select>
+        </div>
+        <button onClick={() => { setFrom(to); setTo(from); }}
+          className="p-2.5 rounded-lg border border-etsy-border bg-white text-etsy-gray mb-0.5 flex-shrink-0">
+          <ArrowRightLeft size={16} />
+        </button>
+        <div className="w-24">
+          <label className="label text-xs">למטבע</label>
+          <select className="input" value={to} onChange={e => setTo(e.target.value)}>
+            {convCurrencies.map(c => <option key={c}>{c}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="bg-gray-50 rounded-xl p-3 text-center border border-etsy-border">
+        <p className="text-xs text-etsy-gray mb-1">
+          {parseFloat(amount) || 1} {from} =
+        </p>
+        <p className="text-2xl font-bold" style={{ color: '#F1641E' }}>
+          {result.toLocaleString(undefined, { maximumFractionDigits: 4 })} {to}
+        </p>
+        <p className="text-xs text-etsy-gray mt-1">
+          1 {from} = {((1 / rates[from]) * rates[to]).toLocaleString(undefined, { maximumFractionDigits: 4 })} {to}
+        </p>
+      </div>
+
+      {/* Quick reference grid */}
+      <div className="mt-3 grid grid-cols-3 gap-1.5">
+        {[10,100,1000].map(n => (
+          <button key={n} onClick={() => setAmount(String(n))}
+            className="py-1 text-xs text-etsy-gray border border-etsy-border rounded-lg bg-white">
+            {n} {from}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ─────────────── Main page ─────────────── */
 
-type MainTab = 'accounts' | 'budget' | 'recurring';
+type MainTab = 'accounts' | 'budget' | 'recurring' | 'goals' | 'converter';
 
 export default function Finance() {
   const toast = useToast();
@@ -1007,6 +1323,7 @@ export default function Finance() {
   const [txs, setTxs] = useState<Transaction[]>(loadTxs);
   const [budgets, setBudgets] = useState<Budget[]>(loadBudgets);
   const [recurring, setRecurring] = useState<Recurring[]>(loadRecurring);
+  const [goals, setGoals] = useState<Goal[]>(loadGoals);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Account | null>(null);
   const [detail, setDetail] = useState<Account | null>(null);
@@ -1018,6 +1335,7 @@ export default function Finance() {
   useEffect(() => { localStorage.setItem('finance_txs', JSON.stringify(txs)); }, [txs]);
   useEffect(() => { localStorage.setItem('finance_budgets', JSON.stringify(budgets)); }, [budgets]);
   useEffect(() => { localStorage.setItem('finance_recurring', JSON.stringify(recurring)); }, [recurring]);
+  useEffect(() => { localStorage.setItem('finance_goals', JSON.stringify(goals)); }, [goals]);
 
   const effectiveBalance = (acc: Account) => {
     const delta = txs.filter(t => t.accountId === acc.id)
@@ -1081,6 +1399,16 @@ export default function Finance() {
     toast.success(`${r.name} שולם ✓`);
   };
 
+  const saveGoal = (g: Omit<Goal, 'id'>) => {
+    setGoals(prev => [...prev, { ...g, id: genId() }]);
+    toast.success('יעד נוסף! 🎯');
+  };
+  const deleteGoal = (id: string) => setGoals(prev => prev.filter(g => g.id !== id));
+  const depositGoal = (id: string, amount: number) => {
+    setGoals(prev => prev.map(g => g.id === id ? { ...g, saved: Math.min(g.saved + amount, g.target) } : g));
+    toast.success('חיסכון עודכן ✓');
+  };
+
   /* count overdue/urgent recurring */
   const urgentCount = recurring.filter(r => daysUntil(r.nextDate) <= 3).length;
 
@@ -1124,25 +1452,34 @@ export default function Finance() {
         </div>
       </div>
 
-      {/* Tab bar */}
-      <div className="flex rounded-xl overflow-hidden border border-etsy-border mb-4 bg-white">
-        {([
-          { key: 'accounts', label: 'חשבונות', icon: <Wallet size={14} /> },
-          { key: 'budget',   label: 'תקציב',   icon: <Target size={14} /> },
-          { key: 'recurring', label: 'קבועים', icon: <RefreshCw size={14} />, badge: urgentCount },
-        ] as { key: MainTab; label: string; icon: React.ReactNode; badge?: number }[]).map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            className={`flex-1 py-2 text-xs font-medium flex items-center justify-center gap-1 relative transition-colors ${
-              tab === t.key ? 'bg-etsy-orange text-white' : 'text-etsy-gray'
-            }`}>
-            {t.icon} {t.label}
-            {t.badge ? (
-              <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center">
-                {t.badge}
-              </span>
-            ) : null}
-          </button>
-        ))}
+      {/* Tab bar — two rows */}
+      <div className="mb-4 space-y-1">
+        <div className="flex rounded-xl overflow-hidden border border-etsy-border bg-white">
+          {([
+            { key: 'accounts',  label: 'חשבונות', icon: <Wallet size={13} /> },
+            { key: 'budget',    label: 'תקציב',   icon: <Target size={13} /> },
+            { key: 'recurring', label: 'קבועים',  icon: <RefreshCw size={13} />, badge: urgentCount },
+          ] as { key: MainTab; label: string; icon: React.ReactNode; badge?: number }[]).map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)}
+              className={`flex-1 py-2 text-xs font-medium flex items-center justify-center gap-1 relative transition-colors ${tab === t.key ? 'bg-etsy-orange text-white' : 'text-etsy-gray'}`}>
+              {t.icon} {t.label}
+              {t.badge ? (
+                <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-red-500 text-white rounded-full text-[9px] flex items-center justify-center">{t.badge}</span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+        <div className="flex rounded-xl overflow-hidden border border-etsy-border bg-white">
+          {([
+            { key: 'goals',     label: 'יעדי חיסכון', icon: <PiggyBank size={13} /> },
+            { key: 'converter', label: 'ממיר מטבעות', icon: <Zap size={13} /> },
+          ] as { key: MainTab; label: string; icon: React.ReactNode }[]).map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)}
+              className={`flex-1 py-2 text-xs font-medium flex items-center justify-center gap-1 transition-colors ${tab === t.key ? 'bg-etsy-orange text-white' : 'text-etsy-gray'}`}>
+              {t.icon} {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -1236,6 +1573,19 @@ export default function Finance() {
           onPayNow={payNow}
         />
       )}
+
+      {/* Goals tab */}
+      {tab === 'goals' && (
+        <GoalsPanel
+          goals={goals}
+          onSave={saveGoal}
+          onDelete={deleteGoal}
+          onDeposit={depositGoal}
+        />
+      )}
+
+      {/* Converter tab */}
+      {tab === 'converter' && <CurrencyConverter />}
     </div>
   );
 }
