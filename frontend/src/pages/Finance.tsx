@@ -5,7 +5,8 @@ import {
   ArrowUpCircle, ArrowDownCircle, List, ArrowLeft, TrendingUp, TrendingDown,
   ArrowRightLeft, Search, Download, PieChart as PieIcon, BarChart2,
   Target, RefreshCw, Bell, AlertTriangle, Calendar,
-  Repeat, Trophy, PiggyBank, Zap
+  Repeat, Trophy, PiggyBank, Zap,
+  Lock, Unlock, ShieldCheck, LayoutDashboard, Delete
 } from 'lucide-react';
 import {
   PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Legend
@@ -1313,12 +1314,295 @@ function CurrencyConverter() {
   );
 }
 
+/* ─────────────── PIN lock ─────────────── */
+
+const PIN_KEY = 'finance_pin';
+const PIN_SESSION = 'finance_unlocked';
+
+function PinScreen({ mode, onSuccess, onCancel }: {
+  mode: 'unlock' | 'set' | 'change';
+  onSuccess: () => void;
+  onCancel?: () => void;
+}) {
+  const [digits, setDigits] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [step, setStep] = useState<'enter' | 'confirm'>('enter');
+  const [error, setError] = useState('');
+  const [shake, setShake] = useState(false);
+
+  const doShake = () => {
+    setShake(true);
+    setTimeout(() => setShake(false), 500);
+    setDigits('');
+    setError('');
+  };
+
+  const press = (d: string) => {
+    if (digits.length >= 4) return;
+    const next = digits + d;
+    setDigits(next);
+    setError('');
+
+    if (next.length === 4) {
+      setTimeout(() => {
+        if (mode === 'unlock') {
+          const saved = localStorage.getItem(PIN_KEY);
+          if (next === saved) {
+            sessionStorage.setItem(PIN_SESSION, '1');
+            onSuccess();
+          } else {
+            setError('קוד שגוי');
+            doShake();
+          }
+        } else if (step === 'enter') {
+          setConfirm(next);
+          setDigits('');
+          setStep('confirm');
+        } else {
+          if (next === confirm) {
+            localStorage.setItem(PIN_KEY, next);
+            sessionStorage.setItem(PIN_SESSION, '1');
+            onSuccess();
+          } else {
+            setError('הקודים אינם תואמים');
+            setStep('enter');
+            setConfirm('');
+            doShake();
+          }
+        }
+      }, 120);
+    }
+  };
+
+  const del = () => setDigits(d => d.slice(0, -1));
+
+  const title = mode === 'unlock' ? 'הזן קוד PIN'
+    : step === 'enter' ? (mode === 'change' ? 'קוד PIN חדש' : 'בחר קוד PIN')
+    : 'אשר קוד PIN';
+
+  return (
+    <div className="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center p-8">
+      <div className="w-12 h-12 rounded-2xl bg-etsy-orange/10 flex items-center justify-center mb-4">
+        <Lock size={24} className="text-etsy-orange" />
+      </div>
+      <h2 className="text-lg font-bold mb-1">{title}</h2>
+      <p className="text-sm text-etsy-gray mb-8">ניהול כסף מאובטח</p>
+
+      {/* Dots */}
+      <div className={`flex gap-4 mb-8 ${shake ? 'animate-pulse' : ''}`}>
+        {[0,1,2,3].map(i => (
+          <div key={i} className={`w-4 h-4 rounded-full border-2 transition-all ${
+            digits.length > i ? 'bg-etsy-orange border-etsy-orange' : 'border-gray-300'
+          }`} />
+        ))}
+      </div>
+
+      {error && <p className="text-red-500 text-sm mb-4 font-medium">{error}</p>}
+
+      {/* Numpad */}
+      <div className="grid grid-cols-3 gap-3 w-64">
+        {['1','2','3','4','5','6','7','8','9','','0','⌫'].map((k, i) => (
+          k === '' ? <div key={i} /> :
+          k === '⌫' ? (
+            <button key={i} onClick={del}
+              className="h-14 rounded-2xl flex items-center justify-center text-etsy-gray active:bg-gray-100 transition-colors">
+              <Delete size={20} />
+            </button>
+          ) : (
+            <button key={i} onClick={() => press(k)}
+              className="h-14 rounded-2xl bg-gray-50 border border-etsy-border text-xl font-semibold active:bg-etsy-orange active:text-white active:border-etsy-orange transition-all">
+              {k}
+            </button>
+          )
+        ))}
+      </div>
+
+      {onCancel && (
+        <button onClick={onCancel} className="mt-6 text-sm text-etsy-gray">
+          ביטול
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ─────────────── Overview dashboard ─────────────── */
+
+function Overview({
+  accounts, txs, recurring, goals, effectiveBalance,
+}: {
+  accounts: Account[];
+  txs: Transaction[];
+  recurring: Recurring[];
+  goals: Goal[];
+  effectiveBalance: (a: Account) => number;
+}) {
+  const sym = (cur: string) => CURRENCY_SYMBOLS[cur] ?? cur;
+
+  // Net worth per currency
+  const netWorth = accounts.reduce<Record<string, number>>((acc, a) => {
+    acc[a.currency] = (acc[a.currency] ?? 0) + effectiveBalance(a);
+    return acc;
+  }, {});
+
+  // Last 5 transactions across all accounts
+  const recent = [...txs]
+    .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
+    .slice(0, 5);
+
+  // This month income vs expense
+  const month = thisMonth();
+  const monthTxs = txs.filter(t => t.date.startsWith(month) && t.type !== 'transfer');
+  const monthIn = monthTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const monthOut = monthTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+
+  // Upcoming recurring (next 7 days)
+  const upcoming = recurring.filter(r => daysUntil(r.nextDate) <= 7).sort((a, b) => a.nextDate.localeCompare(b.nextDate));
+
+  // Goals near completion (>= 80%)
+  const nearGoals = goals.filter(g => g.saved / g.target >= 0.8 && g.saved < g.target);
+
+  return (
+    <div>
+      {/* Net worth cards */}
+      <div className="flex gap-2 overflow-x-auto pb-2 mb-4 -mx-4 px-4">
+        {Object.entries(netWorth).map(([cur, total]) => (
+          <div key={cur} className="card p-3 flex-shrink-0 min-w-[130px]">
+            <p className="text-xs text-etsy-gray mb-0.5">{cur} — נטו</p>
+            <p className={`font-bold text-lg ${total < 0 ? 'text-red-500' : 'text-etsy-dark'}`}>
+              {sym(cur)}{total.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {/* This month summary */}
+      <div className="card p-4 mb-4">
+        <p className="text-xs text-etsy-gray font-medium mb-3">החודש — {month.slice(5)}/{month.slice(2,4)}</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <div className="flex items-center gap-1 mb-1"><ArrowDownCircle size={13} className="text-green-500" /><span className="text-xs text-etsy-gray">הכנסות</span></div>
+            <p className="font-bold text-green-600 text-base">+{monthIn.toLocaleString()}</p>
+          </div>
+          <div>
+            <div className="flex items-center gap-1 mb-1"><ArrowUpCircle size={13} className="text-red-400" /><span className="text-xs text-etsy-gray">הוצאות</span></div>
+            <p className="font-bold text-red-500 text-base">-{monthOut.toLocaleString()}</p>
+          </div>
+        </div>
+        {monthIn > 0 || monthOut > 0 ? (
+          <div className="mt-3">
+            <div className="flex justify-between text-xs text-etsy-gray mb-1">
+              <span>יחס הוצאות</span>
+              <span>{monthIn > 0 ? Math.round((monthOut / monthIn) * 100) : 100}%</span>
+            </div>
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div className={`h-full rounded-full ${monthOut > monthIn ? 'bg-red-500' : 'bg-green-500'}`}
+                style={{ width: `${Math.min((monthOut / Math.max(monthIn, 1)) * 100, 100)}%` }} />
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      {/* Upcoming payments */}
+      {upcoming.length > 0 && (
+        <div className="card p-4 mb-4">
+          <p className="text-xs font-medium text-etsy-gray mb-3 flex items-center gap-1.5">
+            <Bell size={13} className="text-amber-500" /> תשלומים קרובים (7 ימים)
+          </p>
+          {upcoming.map(r => {
+            const days = daysUntil(r.nextDate);
+            return (
+              <div key={r.id} className="flex items-center justify-between py-1.5 border-b border-etsy-border last:border-0">
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${days <= 1 ? 'bg-red-500' : 'bg-amber-400'}`} />
+                  <span className="text-sm">{r.name}</span>
+                </div>
+                <div className="text-left">
+                  <p className="text-xs font-medium text-red-500">-{CURRENCY_SYMBOLS[r.currency] ?? r.currency}{r.amount.toLocaleString()}</p>
+                  <p className="text-xs text-etsy-gray">{days <= 0 ? 'היום!' : `בעוד ${days}י׳`}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Near-complete goals */}
+      {nearGoals.length > 0 && (
+        <div className="card p-4 mb-4">
+          <p className="text-xs font-medium text-etsy-gray mb-3 flex items-center gap-1.5">
+            <Trophy size={13} className="text-yellow-500" /> כמעט שם!
+          </p>
+          {nearGoals.map(g => {
+            const pct = Math.round((g.saved / g.target) * 100);
+            return (
+              <div key={g.id} className="flex items-center gap-2 py-1.5 border-b border-etsy-border last:border-0">
+                <span className="text-xl">{g.emoji}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{g.name}</p>
+                  <div className="h-1.5 bg-gray-100 rounded-full mt-1">
+                    <div className="h-full rounded-full bg-etsy-orange" style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+                <span className="text-xs font-bold text-etsy-orange">{pct}%</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Recent transactions */}
+      {recent.length > 0 && (
+        <div className="card p-4 mb-4">
+          <p className="text-xs font-medium text-etsy-gray mb-3 flex items-center gap-1.5">
+            <List size={13} /> תנועות אחרונות
+          </p>
+          {recent.map(tx => {
+            const acc = accounts.find(a => a.id === tx.accountId);
+            const s = acc ? (CURRENCY_SYMBOLS[acc.currency] ?? acc.currency) : '';
+            return (
+              <div key={tx.id} className="flex items-center gap-2 py-1.5 border-b border-etsy-border last:border-0">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${tx.type === 'income' ? 'bg-green-100' : 'bg-red-100'}`}>
+                  {tx.type === 'income'
+                    ? <ArrowDownCircle size={13} className="text-green-600" />
+                    : <ArrowUpCircle size={13} className="text-red-500" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium truncate">{tx.note || tx.category}</p>
+                  <p className="text-xs text-etsy-gray">{acc?.name} · {fmtDate(tx.date)}</p>
+                </div>
+                <p className={`text-xs font-bold ${tx.type === 'income' ? 'text-green-600' : 'text-red-500'}`}>
+                  {tx.type === 'income' ? '+' : '-'}{s}{tx.amount.toLocaleString()}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {accounts.length === 0 && (
+        <div className="text-center py-12">
+          <LayoutDashboard size={40} className="mx-auto text-etsy-border mb-3" />
+          <p className="text-etsy-gray text-sm">הוסף חשבונות כדי לראות את הדשבורד</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─────────────── Main page ─────────────── */
 
-type MainTab = 'accounts' | 'budget' | 'recurring' | 'goals' | 'converter';
+type MainTab = 'overview' | 'accounts' | 'budget' | 'recurring' | 'goals' | 'converter';
 
 export default function Finance() {
   const toast = useToast();
+
+  // PIN state
+  const hasPin = !!localStorage.getItem(PIN_KEY);
+  const isUnlocked = !!sessionStorage.getItem(PIN_SESSION);
+  const [unlocked, setUnlocked] = useState(!hasPin || isUnlocked);
+  const [pinMode, setPinMode] = useState<'unlock' | 'set' | 'change' | null>(hasPin && !isUnlocked ? 'unlock' : null);
+
   const [accounts, setAccounts] = useState<Account[]>(loadAccounts);
   const [txs, setTxs] = useState<Transaction[]>(loadTxs);
   const [budgets, setBudgets] = useState<Budget[]>(loadBudgets);
@@ -1329,7 +1613,7 @@ export default function Finance() {
   const [detail, setDetail] = useState<Account | null>(null);
   const [filter, setFilter] = useState<AccountType | 'all'>('all');
   const [showTransfer, setShowTransfer] = useState(false);
-  const [tab, setTab] = useState<MainTab>('accounts');
+  const [tab, setTab] = useState<MainTab>('overview');
 
   useEffect(() => { localStorage.setItem('finance_accounts', JSON.stringify(accounts)); }, [accounts]);
   useEffect(() => { localStorage.setItem('finance_txs', JSON.stringify(txs)); }, [txs]);
@@ -1409,8 +1693,30 @@ export default function Finance() {
     toast.success('חיסכון עודכן ✓');
   };
 
+  const lockApp = () => {
+    sessionStorage.removeItem(PIN_SESSION);
+    setUnlocked(false);
+    setPinMode('unlock');
+  };
+  const removePin = () => {
+    localStorage.removeItem(PIN_KEY);
+    sessionStorage.removeItem(PIN_SESSION);
+    toast.success('PIN הוסר');
+  };
+
   /* count overdue/urgent recurring */
   const urgentCount = recurring.filter(r => daysUntil(r.nextDate) <= 3).length;
+
+  /* PIN screens */
+  if (pinMode === 'unlock') {
+    return <PinScreen mode="unlock" onSuccess={() => { setUnlocked(true); setPinMode(null); }} />;
+  }
+  if (pinMode === 'set' || pinMode === 'change') {
+    return <PinScreen mode={pinMode} onSuccess={() => { setPinMode(null); toast.success('PIN נשמר ✓'); }} onCancel={() => setPinMode(null)} />;
+  }
+  if (!unlocked) {
+    return <PinScreen mode="unlock" onSuccess={() => { setUnlocked(true); setPinMode(null); }} />;
+  }
 
   if (detail) {
     const live = { ...detail, balance: effectiveBalance(detail) };
@@ -1436,7 +1742,7 @@ export default function Finance() {
     <div className="p-4 safe-top">
       <div className="flex items-center justify-between mb-4 pt-2">
         <h1 className="text-xl font-bold">ניהול כסף</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           {tab === 'accounts' && accounts.length >= 2 && !showForm && !editing && (
             <button onClick={() => setShowTransfer(!showTransfer)}
               className="btn-secondary flex items-center gap-1.5 py-2 px-3 text-sm">
@@ -1449,6 +1755,13 @@ export default function Finance() {
               <Plus size={16} /> הוסף
             </button>
           )}
+          {/* Lock / PIN button */}
+          <button
+            onClick={() => localStorage.getItem(PIN_KEY) ? lockApp() : setPinMode('set')}
+            title={localStorage.getItem(PIN_KEY) ? 'נעל' : 'הגדר PIN'}
+            className="p-2 rounded-lg border border-etsy-border bg-white text-etsy-gray">
+            {localStorage.getItem(PIN_KEY) ? <Lock size={16} /> : <ShieldCheck size={16} />}
+          </button>
         </div>
       </div>
 
@@ -1456,9 +1769,21 @@ export default function Finance() {
       <div className="mb-4 space-y-1">
         <div className="flex rounded-xl overflow-hidden border border-etsy-border bg-white">
           {([
-            { key: 'accounts',  label: 'חשבונות', icon: <Wallet size={13} /> },
-            { key: 'budget',    label: 'תקציב',   icon: <Target size={13} /> },
-            { key: 'recurring', label: 'קבועים',  icon: <RefreshCw size={13} />, badge: urgentCount },
+            { key: 'overview',  label: 'סקירה',    icon: <LayoutDashboard size={13} /> },
+            { key: 'accounts',  label: 'חשבונות',  icon: <Wallet size={13} /> },
+            { key: 'budget',    label: 'תקציב',    icon: <Target size={13} /> },
+          ] as { key: MainTab; label: string; icon: React.ReactNode }[]).map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)}
+              className={`flex-1 py-2 text-xs font-medium flex items-center justify-center gap-1 relative transition-colors ${tab === t.key ? 'bg-etsy-orange text-white' : 'text-etsy-gray'}`}>
+              {t.icon} {t.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex rounded-xl overflow-hidden border border-etsy-border bg-white">
+          {([
+            { key: 'recurring', label: 'קבועים',      icon: <RefreshCw size={13} />, badge: urgentCount },
+            { key: 'goals',     label: 'יעדים',        icon: <PiggyBank size={13} /> },
+            { key: 'converter', label: 'ממיר',         icon: <Zap size={13} /> },
           ] as { key: MainTab; label: string; icon: React.ReactNode; badge?: number }[]).map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
               className={`flex-1 py-2 text-xs font-medium flex items-center justify-center gap-1 relative transition-colors ${tab === t.key ? 'bg-etsy-orange text-white' : 'text-etsy-gray'}`}>
@@ -1466,17 +1791,6 @@ export default function Finance() {
               {t.badge ? (
                 <span className="absolute top-0.5 right-0.5 w-4 h-4 bg-red-500 text-white rounded-full text-[9px] flex items-center justify-center">{t.badge}</span>
               ) : null}
-            </button>
-          ))}
-        </div>
-        <div className="flex rounded-xl overflow-hidden border border-etsy-border bg-white">
-          {([
-            { key: 'goals',     label: 'יעדי חיסכון', icon: <PiggyBank size={13} /> },
-            { key: 'converter', label: 'ממיר מטבעות', icon: <Zap size={13} /> },
-          ] as { key: MainTab; label: string; icon: React.ReactNode }[]).map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)}
-              className={`flex-1 py-2 text-xs font-medium flex items-center justify-center gap-1 transition-colors ${tab === t.key ? 'bg-etsy-orange text-white' : 'text-etsy-gray'}`}>
-              {t.icon} {t.label}
             </button>
           ))}
         </div>
@@ -1526,6 +1840,17 @@ export default function Finance() {
             </button>
           ))}
         </div>
+      )}
+
+      {/* Overview tab */}
+      {tab === 'overview' && (
+        <Overview
+          accounts={accounts}
+          txs={txs}
+          recurring={recurring}
+          goals={goals}
+          effectiveBalance={effectiveBalance}
+        />
       )}
 
       {/* Accounts tab */}
