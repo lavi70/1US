@@ -1,13 +1,12 @@
 import axios, { AxiosInstance } from 'axios';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 import db from '../db/database.js';
 
 const ETSY_BASE = 'https://openapi.etsy.com/v3';
 const ETSY_AUTH = 'https://www.etsy.com/oauth/connect';
 const ETSY_TOKEN = 'https://api.etsy.com/v3/public/oauth/token';
 
-// Temporary store for PKCE verifiers during OAuth flow (shopId -> verifier)
 const pkceVerifiers = new Map<string, string>();
 
 export interface Shop {
@@ -34,7 +33,6 @@ export function buildProxyAgent(shop: Shop) {
   }
   const protocol = new URL(url).protocol;
   if (protocol === 'socks5:' || protocol === 'socks4:' || protocol === 'socks:') {
-    // Dynamic import for ESM-only socks-proxy-agent
     const { SocksProxyAgent } = require('socks-proxy-agent');
     return new SocksProxyAgent(url);
   }
@@ -55,7 +53,6 @@ export function getClient(shop: Shop): AxiosInstance {
   });
 }
 
-// Rate limiter: max 10 req/sec per shop (Etsy limit)
 export async function rateLimit(shopId: string) {
   const now = Math.floor(Date.now() / 1000);
   const row = db.prepare('SELECT * FROM rate_limits WHERE shop_id = ?').get(shopId) as any;
@@ -95,9 +92,10 @@ export async function refreshTokenIfNeeded(shop: Shop): Promise<Shop> {
 }
 
 export function buildAuthUrl(shopId: string, state: string): string {
-  // Generate proper PKCE code_verifier: 64 random bytes as base64url = 86 chars
-  const verifier = randomBytes(64).toString('base64url');
+  const verifier = randomBytes(32).toString('base64url');
   pkceVerifiers.set(shopId, verifier);
+
+  const challenge = createHash('sha256').update(verifier).digest('base64url');
 
   const params = new URLSearchParams({
     response_type: 'code',
@@ -105,8 +103,8 @@ export function buildAuthUrl(shopId: string, state: string): string {
     scope: 'listings_r listings_w listings_d shops_r shops_w transactions_r profile_r',
     client_id: process.env.ETSY_API_KEY || '',
     state: `${shopId}:${state}`,
-    code_challenge: verifier,
-    code_challenge_method: 'plain',
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
   });
   return `${ETSY_AUTH}?${params.toString()}`;
 }
@@ -134,7 +132,6 @@ export async function exchangeCode(code: string, shopId: string): Promise<void> 
     WHERE id = ?
   `).run(access_token, refresh_token, expires_at, shopId);
 
-  // Fetch shop info - non-blocking, don't fail auth if this errors
   fetchAndStoreShopInfo(shopId).catch(err => console.error('fetchAndStoreShopInfo:', err.message));
 }
 

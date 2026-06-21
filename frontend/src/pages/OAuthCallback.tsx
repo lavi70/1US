@@ -12,8 +12,10 @@ export default function OAuthCallback() {
       window.opener.postMessage({ type: 'etsy_oauth', connected, error }, window.location.origin);
       window.close();
     } else {
-      // Opened directly (not popup) — redirect to shops
-      window.location.replace('/shops');
+      const dest = connected
+        ? `/shops?oauth_connected=${connected}`
+        : `/shops?oauth_error=${error || 'unknown'}`;
+      window.location.replace(dest);
     }
   }, []);
 
