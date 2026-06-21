@@ -61,6 +61,7 @@ export default function Shops() {
       const { url } = await authApi.getUrl(shopId);
       window.location.href = url;
     },
+    onError: (e: any) => toast.error(`שגיאה: ${e.message}`),
   });
 
   const disconnectMutation = useMutation({
