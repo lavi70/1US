@@ -82,7 +82,7 @@ export default function NewListing() {
   const onDrop = useCallback((accepted: File[]) => {
     const newFiles = accepted.slice(0, 10 - images.length);
     newFiles.forEach(f => {
-      const img = new Image();
+      const img = new window.Image();
       const url = URL.createObjectURL(f);
       img.onload = () => {
         URL.revokeObjectURL(url);
