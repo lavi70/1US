@@ -58,8 +58,7 @@ export default function Shops() {
   const connectMutation = useMutation({
     mutationFn: async (shopId: string) => {
       const { url } = await authApi.getUrl(shopId);
-      const popup = window.open(url, 'etsy_oauth', 'width=600,height=700,left=200,top=100');
-      if (!popup) toast.error('חסום פופאפ — אפשר פופאפים בדפדפן ונסה שוב');
+      window.location.href = url;
     },
   });
 
