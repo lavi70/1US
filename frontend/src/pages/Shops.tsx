@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, Link, Unlink, ChevronDown, ChevronUp, Shield, CheckCircle, XCircle } from 'lucide-react';
 import { shopsApi, authApi } from '../services/api';
 import { useToast } from '../components/Toast';
@@ -24,29 +25,30 @@ function parseProxyUrl(url: string): { type: ProxyType; host: string; port: stri
 export default function Shops() {
   const qc = useQueryClient();
   const toast = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [showAdd, setShowAdd] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const { data: shops = [], isLoading } = useQuery({ queryKey: ['shops'], queryFn: shopsApi.list });
 
-  // Listen for OAuth popup result
+  // Handle OAuth redirect result
   useEffect(() => {
-    const handler = (e: MessageEvent) => {
-      if (e.data?.type !== 'etsy_oauth') return;
-      if (e.data.connected) {
-        qc.invalidateQueries({ queryKey: ['shops'] });
-        toast.success('החנות חוברה בהצלחה לEtsy!');
-      } else if (e.data.error) {
-        toast.error(`שגיאה בחיבור: ${decodeURIComponent(e.data.error)}`);
-      }
-    };
-    window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
-  }, [qc, toast]);
+    const connected = searchParams.get('oauth_connected');
+    const error = searchParams.get('oauth_error');
+    if (connected) {
+      qc.invalidateQueries({ queryKey: ['shops'] });
+      toast.success('החנות חוברה בהצלחה לEtsy!');
+      setSearchParams({}, { replace: true });
+    } else if (error) {
+      toast.error(`שגיאה בחיבור: ${decodeURIComponent(error)}`);
+      setSearchParams({}, { replace: true });
+    }
+  }, []);
 
   const createMutation = useMutation({
     mutationFn: shopsApi.create,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['shops'] }); setShowAdd(false); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['shops'] }); setShowAdd(false); toast.success('החנות נוספה!'); },
+    onError: (e: any) => toast.error(`שגיאה: ${e.message}`),
   });
 
   const deleteMutation = useMutation({
@@ -57,9 +59,9 @@ export default function Shops() {
   const connectMutation = useMutation({
     mutationFn: async (shopId: string) => {
       const { url } = await authApi.getUrl(shopId);
-      const popup = window.open(url, 'etsy_oauth', 'width=600,height=700,left=200,top=100');
-      if (!popup) toast.error('חסום פופאפ — אפשר פופאפים בדפדפן ונסה שוב');
+      window.location.href = url;
     },
+    onError: (e: any) => toast.error(`שגיאה: ${e.message}`),
   });
 
   const disconnectMutation = useMutation({
@@ -135,7 +137,6 @@ function AddShopForm({ onSubmit, onCancel, loading }: { onSubmit: (d: any) => vo
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">הגדרות פרוקסי</span>
             </div>
-            {/* Proxy type pills */}
             <div className="flex gap-1 flex-wrap">
               {(['socks5','socks4','http','https'] as ProxyType[]).map(t => (
                 <button key={t} type="button"
@@ -241,7 +242,6 @@ function ShopItem({ shop, expanded, onToggle, onConnect, onDisconnect, onDelete 
 
       {expanded && (
         <div className="border-t border-etsy-border px-4 pb-4 pt-3 space-y-3">
-          {/* Proxy Settings */}
           <div className="border border-blue-100 rounded-xl p-3 bg-blue-50 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-700 uppercase tracking-wide">
@@ -252,7 +252,6 @@ function ShopItem({ shop, expanded, onToggle, onConnect, onDisconnect, onDelete 
                 : <span className="flex items-center gap-1 text-xs text-gray-400"><XCircle size={12} /> לא מוגדר</span>
               }
             </div>
-            {/* Type pills */}
             <div className="flex gap-1 flex-wrap">
               {(['socks5','socks4','http','https'] as ProxyType[]).map(t => (
                 <button key={t} type="button"
@@ -302,7 +301,6 @@ function ShopItem({ shop, expanded, onToggle, onConnect, onDisconnect, onDelete 
             </button>
           </div>
 
-          {/* Actions */}
           <div className="flex gap-2 pt-1">
             {connected ? (
               <button onClick={onDisconnect} className="flex-1 flex items-center justify-center gap-1 btn-secondary text-sm text-red-600 border-red-200">
