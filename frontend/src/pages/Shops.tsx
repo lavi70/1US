@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, Link, Unlink, ChevronDown, ChevronUp, Shield, CheckCircle, XCircle } from 'lucide-react';
 import { shopsApi, authApi } from '../services/api';
 import { useToast } from '../components/Toast';
@@ -24,25 +25,25 @@ function parseProxyUrl(url: string): { type: ProxyType; host: string; port: stri
 export default function Shops() {
   const qc = useQueryClient();
   const toast = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [showAdd, setShowAdd] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const { data: shops = [], isLoading } = useQuery({ queryKey: ['shops'], queryFn: shopsApi.list });
 
-  // Listen for OAuth popup result
+  // Handle OAuth redirect result
   useEffect(() => {
-    const handler = (e: MessageEvent) => {
-      if (e.data?.type !== 'etsy_oauth') return;
-      if (e.data.connected) {
-        qc.invalidateQueries({ queryKey: ['shops'] });
-        toast.success('החנות חוברה בהצלחה לEtsy!');
-      } else if (e.data.error) {
-        toast.error(`שגיאה בחיבור: ${decodeURIComponent(e.data.error)}`);
-      }
-    };
-    window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
-  }, [qc, toast]);
+    const connected = searchParams.get('oauth_connected');
+    const error = searchParams.get('oauth_error');
+    if (connected) {
+      qc.invalidateQueries({ queryKey: ['shops'] });
+      toast.success('החנות חוברה בהצלחה לEtsy!');
+      setSearchParams({}, { replace: true });
+    } else if (error) {
+      toast.error(`שגיאה בחיבור: ${decodeURIComponent(error)}`);
+      setSearchParams({}, { replace: true });
+    }
+  }, []);
 
   const createMutation = useMutation({
     mutationFn: shopsApi.create,
