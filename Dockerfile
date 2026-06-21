@@ -6,19 +6,17 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-# Production: build backend and serve everything
+# Production
 FROM node:20-alpine
 WORKDIR /app
 RUN apk add --no-cache python3 make g++ vips-dev
 
 COPY backend/package*.json ./
-RUN npm ci --omit=dev
-
+RUN npm ci
 COPY backend/ ./
-RUN npx tsc
+RUN npx tsc && npm prune --omit=dev
 
 COPY --from=frontend-builder /app/frontend/dist ./public
-
 RUN mkdir -p /app/data /app/uploads/listings
 
 EXPOSE 3001
