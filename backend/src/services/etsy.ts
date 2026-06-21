@@ -95,9 +95,12 @@ export async function refreshTokenIfNeeded(shop: Shop): Promise<Shop> {
 }
 
 export function buildAuthUrl(shopId: string, state: string): string {
-  // Generate proper PKCE code_verifier: 64 random bytes as base64url = 86 chars
-  const verifier = randomBytes(64).toString('base64url');
+  const verifier = randomBytes(32).toString('base64url');
   pkceVerifiers.set(shopId, verifier);
+
+  // SHA256 hash of verifier, base64url encoded (S256 method required by Etsy)
+  const { createHash } = require('crypto');
+  const challenge = createHash('sha256').update(verifier).digest('base64url');
 
   const params = new URLSearchParams({
     response_type: 'code',
@@ -105,8 +108,8 @@ export function buildAuthUrl(shopId: string, state: string): string {
     scope: 'listings_r listings_w listings_d shops_r shops_w transactions_r profile_r',
     client_id: process.env.ETSY_API_KEY || '',
     state: `${shopId}:${state}`,
-    code_challenge: verifier,
-    code_challenge_method: 'plain',
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
   });
   return `${ETSY_AUTH}?${params.toString()}`;
 }
