@@ -46,7 +46,8 @@ export default function Shops() {
 
   const createMutation = useMutation({
     mutationFn: shopsApi.create,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['shops'] }); setShowAdd(false); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['shops'] }); setShowAdd(false); toast.success('החנות נוספה!'); },
+    onError: (e: any) => toast.error(`שגיאה: ${e.message}`),
   });
 
   const deleteMutation = useMutation({
