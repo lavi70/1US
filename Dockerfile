@@ -19,5 +19,4 @@ RUN npx tsc && npm prune --omit=dev
 COPY --from=frontend-builder /app/frontend/dist ./public
 RUN mkdir -p /app/data /app/uploads/listings
 
-EXPOSE 3001
 CMD ["node", "dist/server.js"]
